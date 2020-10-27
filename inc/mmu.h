@@ -7,7 +7,7 @@
  */
 
 /*
- * A virtual address 'la' has a four-part structure as follows:
+ * A virtual address 'va' has a four-part structure as follows:
  * +-----9-----+-----9-----+-----9-----+-----9-----+---------12---------+
  * |  Level 0  |  Level 1  |  Level 2  |  Level 3  | Offset within Page |
  * |   Index   |   Index   |   Index   |   Index   |                    |
@@ -41,7 +41,7 @@
 #define PTE_AF       (1<<10)     /* P2066 access flags */
 // Address in page table or page directory entry
 #define PTE_ADDR(pte)   ((uint64_t)(pte) & ~0xFFF)
-#define PTE_FLAGS(pte)  ((unsigned)(pte) &  0xFFF)
+#define PTE_FLAGS(pte)  ((uint64_t)(pte) &  0xFFF)
 
 /* P2061 */
 #define MM_TYPE_BLOCK       PTE_P | PTE_BLOCK

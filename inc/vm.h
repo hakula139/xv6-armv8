@@ -1,8 +1,9 @@
-#ifndef KERN_VM_H
-#define KERN_VM_H
+#ifndef INC_VM_H
+#define INC_VM_H
 
 #include "memlayout.h"
 
-void vm_free(uint64_t *, int);
+void vm_free(uint64_t*, int);
+void check_map_region();
 
-#endif /* !KERN_VM_H */
+#endif  // INC_VM_H
