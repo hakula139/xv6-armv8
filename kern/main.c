@@ -1,7 +1,7 @@
 #include <stdint.h>
 
-#include "string.h"
 #include "console.h"
+#include "string.h"
 
 void
 main()
@@ -12,10 +12,10 @@ main()
      */
 
     extern char edata[], end[];
+    memset(edata, 0, end - edata);
 
-    /* TODO: Use `memset` to clear the BSS section of our program. */
+    console_init();
+    cprintf("hello, world\n");
 
-    /* TODO: Use `cprintf` to print "hello, world\n" */
-
-    while (1) ;
+    while (1) {}
 }
