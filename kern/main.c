@@ -1,11 +1,12 @@
 #include <stdint.h>
 
 #include "arm.h"
-#include "string.h"
 #include "console.h"
 #include "kalloc.h"
-#include "trap.h"
+#include "string.h"
 #include "timer.h"
+#include "trap.h"
+#include "vm.h"
 
 void
 main()
@@ -17,12 +18,11 @@ main()
 
     extern char edata[], end[], vectors[];
 
-    /* TODO: Use `memset` to clear the BSS section of our program. */
-    memset(edata, 0, end - edata);    
-    /* TODO: Use `cprintf` to print "hello, world\n" */
+    memset(edata, 0, end - edata);
     console_init();
     alloc_init();
     cprintf("Allocator: Init success.\n");
+    check_map_region();
     check_free_list();
 
     irq_init();
@@ -30,5 +30,5 @@ main()
     lvbar(vectors);
     timer_init();
 
-    while (1) ;
+    while (1) {}
 }
