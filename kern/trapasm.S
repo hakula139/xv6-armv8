@@ -29,7 +29,7 @@ alltraps:
 
     mrs x3, elr_el1
     mrs x2, spsr_el1
-    mrs x1, sp_el1
+    mrs x1, sp_el0
     stp x3, x0, [sp, #-16]!
     stp x1, x2, [sp, #-16]!
 
@@ -52,7 +52,7 @@ trapret:
 
     ldp x1, x2, [sp], #16
     ldp x3, x0, [sp], #16
-    msr sp_el1, x1
+    msr sp_el0, x1
     msr spsr_el1, x2
     msr elr_el1, x3
 
