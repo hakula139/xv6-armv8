@@ -30,7 +30,7 @@ main()
     lvbar(vectors);
     timer_init();
 
-    sti();
+    // sti();
 
     while (1) {}
 }
