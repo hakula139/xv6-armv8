@@ -1,14 +1,14 @@
 #include "trap.h"
 
 #include "arm.h"
-#include "sysregs.h"
 #include "mmu.h"
 #include "peripherals/irq.h"
+#include "sysregs.h"
 
-#include "uart.h"
-#include "console.h"
 #include "clock.h"
+#include "console.h"
 #include "timer.h"
+#include "uart.h"
 
 void
 irq_init()
@@ -20,19 +20,23 @@ irq_init()
 }
 
 void
-trap(struct trapframe *tf)
+trap(struct trapframe* tf)
 {
     int src = get32(IRQ_SRC_CORE(cpuid()));
-    if (src & IRQ_CNTPNSIRQ) timer(), timer_reset();
-    else if (src & IRQ_TIMER) clock(), clock_reset();
-    else if (src & IRQ_GPU) {
-        if (get32(IRQ_PENDING_1) & AUX_INT) uart_intr();
-        else goto bad;
+    if (src & IRQ_CNTPNSIRQ) {
+        timer(), timer_reset();
+    } else if (src & IRQ_TIMER) {
+        clock(), clock_reset();
+    } else if (src & IRQ_GPU) {
+        if (get32(IRQ_PENDING_1) & AUX_INT)
+            uart_intr();
+        else
+            goto bad;
     } else {
         switch (resr() >> EC_SHIFT) {
         case EC_SVC64:
             cprintf("hello, world\n");
-            lesr(0);  /* Clear esr. */
+            lesr(0); /* Clear esr. */
             break;
         default:
 bad:

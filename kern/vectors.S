@@ -17,6 +17,7 @@ el1_sp0:
 el1_spx:
     verror(4)
     verror(5)
+    # ventry
     verror(6)
     verror(7)
 

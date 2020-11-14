@@ -82,7 +82,7 @@ qemu-gdb: $(KERN_IMG)
 	$(QEMU) -kernel $< -S -gdb tcp::1234
 
 gdb: 
-	aarch64-linux-gdb -x .gdbinit
+	gdb-multiarch -x .gdbinit
 
 clean:
 	rm -r $(BUILD_DIR)
