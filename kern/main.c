@@ -6,6 +6,10 @@
 #include "spinlock.h"
 #include "string.h"
 #include "timer.h"
+#include "trap.h"
+#include "vm.h"
+
+struct spinlock started_lock = {1};
 
 void
 main()
@@ -17,18 +21,25 @@ main()
 
     extern char edata[], end[], vectors[];
 
-    memset(edata, 0, end - edata);
-    console_init();
-    alloc_init();
-    cprintf("Allocator: Init success.\n");
-    check_map_region();
-    check_free_list();
-
-    irq_init();
-
-    lvbar(vectors);
-    timer_init();
-
+    if (cpuid() == 0) {
+        memset(edata, 0, end - edata);
+        console_init();
+        cprintf("CPU 0: Init started.\n");
+        alloc_init();
+        cprintf("Allocator: Init success.\n");
+        check_map_region();
+        check_free_list();
+        irq_init();
+        lvbar(vectors);
+        timer_init();
+        started_lock.locked = 0;  // allow APs to run
+    } else {
+        while (started_lock.locked) {}
+        cprintf("CPU %d: Init started.\n", cpuid());
+        irq_init();
+        lvbar(vectors);
+        timer_init();
+    }
     cprintf("CPU %d: Init success.\n", cpuid());
 
     while (1) {}

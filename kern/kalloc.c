@@ -5,6 +5,7 @@
 #include "console.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "spinlock.h"
 #include "string.h"
 #include "types.h"
 
@@ -19,12 +20,14 @@ struct run {
 };
 
 struct {
+    struct spinlock lock;
     struct run* free_list; /* Free list of physical pages */
 } kmem;
 
 void
 alloc_init()
 {
+    kmem.lock.locked = 0; /* Init kmem lock */
     free_range(end, P2V(PHYSTOP));
 }
 
@@ -41,8 +44,10 @@ kfree(char* v)
     memset(v, 1, PGSIZE);
 
     r = (struct run*)v;
+    acquire(&kmem.lock);
     r->next = kmem.free_list;
     kmem.free_list = r;
+    release(&kmem.lock);
 }
 
 void
@@ -62,8 +67,10 @@ char*
 kalloc()
 {
     struct run* p;
+    acquire(&kmem.lock);
     p = kmem.free_list;
     if (p) kmem.free_list = p->next;
+    release(&kmem.lock);
     return (char*)p;
 }
 
