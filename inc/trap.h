@@ -1,5 +1,5 @@
-#ifndef INC_TRAP_H
-#define INC_TRAP_H
+#ifndef INC_TRAP_H_
+#define INC_TRAP_H_
 
 #include <stdint.h>
 
@@ -47,4 +47,4 @@ void trap(struct trapframe*);
 void irq_init();
 void irq_error();
 
-#endif
+#endif  // INC_TRAP_H_

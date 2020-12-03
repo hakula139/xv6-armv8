@@ -9,8 +9,7 @@
 void
 uart_putchar(int c)
 {
-    while (!(get32(AUX_MU_LSR_REG) & 0x20))
-        ;
+    while (!(get32(AUX_MU_LSR_REG) & 0x20)) {}
     put32(AUX_MU_IO_REG, c & 0xFF);
 }
 

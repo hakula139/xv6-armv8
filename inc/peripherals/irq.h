@@ -1,6 +1,6 @@
 /* See BCM2837 ARM Peripherals and QA7_rev3.4. */
-#ifndef INC_PERIPHERALS_IRQ_H
-#define INC_PERIPHERALS_IRQ_H
+#ifndef INC_PERIPHERALS_IRQ_H_
+#define INC_PERIPHERALS_IRQ_H_
 
 #include "peripherals/base.h"
 
@@ -43,4 +43,4 @@
 #define CORE_TIMER_CTRL(i)      (LOCAL_BASE + 0x40 + 4*(i))
 #define CORE_TIMER_ENABLE       (1 << 1)    /* CNTPNSIRQ */
 
-#endif
+#endif  // INC_PERIPHERALS_IRQ_H_

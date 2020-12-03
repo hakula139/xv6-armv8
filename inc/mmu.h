@@ -1,5 +1,5 @@
-#ifndef INC_MMU_H
-#define INC_MMU_H
+#ifndef INC_MMU_H_
+#define INC_MMU_H_
 
 /*
  * See Chapter 12 of ARM Cortex-A Series Programmer's Guide for ARMv8-A
@@ -96,4 +96,4 @@
                          TCR_IPS)
 
 
-#endif
+#endif  // INC_MMU_H_

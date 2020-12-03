@@ -56,8 +56,8 @@ user_init()
     /* for why our symbols differ from xv6, please refer
      * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
      */
-    extern char _binary_obj_user_initcode_start[],
-        _binary_obj_user_initcode_size[];
+    extern char _binary_obj_user_initcode_start[];
+    extern char _binary_obj_user_initcode_size[];
 
     /* TODO: Your code here. */
 }

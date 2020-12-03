@@ -1,5 +1,5 @@
-#ifndef INC_SYSREGS_H
-#define INC_SYSREGS_H
+#ifndef INC_SYSREGS_H_
+#define INC_SYSREGS_H_
 
 /* SCTLR_EL1, System Control Register (EL1). */
 #define SCTLR_RESERVED              ((3 << 28) | (3 << 22) | (1 << 20) | (1 << 11) | (1 << 8) | (1 << 7))
@@ -37,4 +37,4 @@
 #define EC_DABORT                   0x24
 #define EC_IABORT                   0x20
 
-#endif
+#endif  // INC_SYSREGS_H_

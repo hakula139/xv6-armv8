@@ -1,5 +1,5 @@
-#ifndef INC_VM_H
-#define INC_VM_H
+#ifndef INC_VM_H_
+#define INC_VM_H_
 
 #include <stdint.h>
 
@@ -12,4 +12,4 @@ void uvm_init(uint64_t*, char*, int);
 
 uint64_t* pgdir_init();
 
-#endif  // INC_VM_H
+#endif  // INC_VM_H_
