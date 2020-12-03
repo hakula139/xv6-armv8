@@ -34,6 +34,6 @@
 #define ARRAY_SIZE(a)   (sizeof(a) / sizeof(a[0]))
 
 /* Return the offset of 'member' relative to the beginning of a struct type. */
-#define offsetof(type, member)  ((size_t) (&((type*)0)->member))
+#define offset_of(type, member)  ((size_t) (&((type*)0)->member))
 
 #endif

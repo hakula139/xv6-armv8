@@ -5,6 +5,7 @@
 #include "kalloc.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "string.h"
 #include "timer.h"
 #include "trap.h"
 #include "vm.h"

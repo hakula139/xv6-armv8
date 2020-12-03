@@ -6,6 +6,7 @@
 #include "kalloc.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "string.h"
 #include "types.h"
 
 extern uint64_t* kpgdir;

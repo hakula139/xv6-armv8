@@ -1,22 +1,23 @@
 #include "proc.h"
-#include "spinlock.h"
+
 #include "console.h"
 #include "kalloc.h"
-#include "trap.h"
-#include "string.h"
-#include "vm.h"
 #include "mmu.h"
+#include "spinlock.h"
+#include "string.h"
+#include "trap.h"
+#include "vm.h"
 
 struct {
     struct proc proc[NPROC];
 } ptable;
 
-static struct proc *initproc;
+static struct proc* initproc;
 
 int nextpid = 1;
 void forkret();
 extern void trapret();
-void swtch(struct context **, struct context *);
+void swtch(struct context**, struct context*);
 
 /*
  * Initialize the spinlock for ptable to serialize the access to ptable
@@ -33,10 +34,10 @@ proc_init()
  * state (allocate stack, clear trapframe, set context for switch...)
  * required to run in the kernel. Otherwise return 0.
  */
-static struct proc *
+static struct proc*
 proc_alloc()
 {
-    struct proc *p;
+    struct proc* p;
     /* TODO: Your code here. */
 
     return p;
@@ -45,16 +46,19 @@ proc_alloc()
 /*
  * Set up first user process(Only used once).
  * Set trapframe for the new process to run
- * from the beginning of the user process determined 
+ * from the beginning of the user process determined
  * by uvm_init
  */
 void
 user_init()
 {
-    struct proc *p;
-    /* for why our symbols differ from xv6, please refer https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean */
-    extern char _binary_obj_user_initcode_start[], _binary_obj_user_initcode_size[];
-    
+    struct proc* p;
+    /* for why our symbols differ from xv6, please refer
+     * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
+     */
+    extern char _binary_obj_user_initcode_start[],
+        _binary_obj_user_initcode_size[];
+
     /* TODO: Your code here. */
 }
 
@@ -70,10 +74,10 @@ user_init()
 void
 scheduler()
 {
-    struct proc *p;
-    struct cpu *c = thiscpu;
+    struct proc* p;
+    struct cpu* c = thiscpu;
     c->proc = NULL;
-    
+
     for (;;) {
         /* Loop over process table looking for process to run. */
         /* TODO: Your code here. */
@@ -106,6 +110,6 @@ forkret()
 void
 exit()
 {
-    struct proc *p = thiscpu->proc;
+    struct proc* p = thiscpu->proc;
     /* TODO: Your code here. */
 }
