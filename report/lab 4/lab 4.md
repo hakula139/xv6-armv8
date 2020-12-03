@@ -1,4 +1,4 @@
-# Lab 4: Multicore and Locking
+# Lab 4: Multiprocessor and Lock
 
 ## 习题解答
 
