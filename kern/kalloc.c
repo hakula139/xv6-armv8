@@ -6,8 +6,6 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "spinlock.h"
-#include "string.h"
-#include "types.h"
 
 extern char end[];
 
