@@ -23,6 +23,8 @@
 为什么要保存这 3 个特殊寄存器？因为中断返回（`eret`）时需要还原中断前 PSTATE（保存在 SPSR_EL1）、中断前 PC（保存在 ELR_EL1），以及还原用户态栈指针 SP（保存在 SP_EL0）。[^1]
 
 ```c {.line-number}
+// inc/trap.h
+
 struct trapframe {
     // General-Purpose Registers
     uint64_t x0;
