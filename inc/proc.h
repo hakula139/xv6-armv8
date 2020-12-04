@@ -19,16 +19,19 @@ struct cpu {
 
 extern struct cpu cpus[NCPU];
 
-/*
- * Saved registers for kernel context switches.
- * Don't need to save X1-X15 since accorrding to
- * the x86 convention it is the caller to save them.
- * Contexts are stored at the top of the stack they describe,
- * the stack pointer is the address of the context.
- * The layout of the context matches the layout of the stack in swtch.S
- */
+// Saved registers for kernel context switches.
 struct context {
-    /* TODO: Your code here. */
+    // Callee-saved Registers
+    uint64_t x19;
+    uint64_t x20;
+    uint64_t x21;
+    uint64_t x22;
+    uint64_t x23;
+    uint64_t x24;
+    uint64_t x25;
+    uint64_t x26;
+    uint64_t x27;
+    uint64_t x28;
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };

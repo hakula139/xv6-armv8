@@ -30,7 +30,7 @@ main()
         cprintf("main: allocator init success.\n");
         check_map_region();
         check_free_list();
-        started_lock.locked = 0;  // allow APs to run
+        // started_lock.locked = 0;  // allow APs to run
     } else {
         while (started_lock.locked) {}
         cprintf("main: [CPU %d] init started.\n", cpuid());
