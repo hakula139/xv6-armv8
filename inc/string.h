@@ -28,8 +28,8 @@ strcpy(char* dst, const char* src)
     char* ret;
 
     ret = dst;
-    while ((*dst++ = *src++) != '\0') /* do nothing */
-        ;
+    while ((*dst++ = *src++) != '\0') {} /* do nothing */
+
     return ret;
 }
 
@@ -113,30 +113,25 @@ strfind(const char* s, char c)
 static inline void*
 memset(void* v, int c, size_t n)
 {
-    char* p;
-    int m;
-
-    p = v;
-    m = n;
+    char* p = (char*)v;
+    int m = n;
     while (--m >= 0) *p++ = c;
-
     return v;
 }
 
 static inline void*
 memmove(void* dst, const void* src, size_t n)
 {
-    const char* s;
-    char* d;
+    const char* s = (char*)src;
+    char* d = (char*)dst;
 
-    s = src;
-    d = dst;
     if (s < d && s + n > d) {
         s += n;
         d += n;
         while (n-- > 0) *--d = *--s;
-    } else
+    } else {
         while (n-- > 0) *d++ = *s++;
+    }
 
     return dst;
 }
@@ -164,10 +159,10 @@ memcmp(const void* v1, const void* v2, size_t n)
 static inline void*
 memfind(const void* s, int c, size_t n)
 {
-    const void* ends = (const char*)s + n;
-    for (; s < ends; s++)
-        if (*(const unsigned char*)s == (unsigned char)c) break;
-    return (void*)s;
+    size_t i;
+    for (i = 0; i < n; ++i)
+        if (*(const unsigned char*)(s + i) == (unsigned char)c) break;
+    return (void*)(s + i);
 }
 
 static inline long
