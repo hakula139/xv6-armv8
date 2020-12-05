@@ -80,19 +80,15 @@ map_region(uint64_t* pgdir, void* va, uint64_t size, uint64_t pa, int64_t perm)
 void
 vm_free(uint64_t* pgdir, int level)
 {
-    // cprintf("vm_free: currently at 0x%p at level %d.\n", pgdir, 4 - level);
     if (!pgdir || level < 0) return;
     if (PTE_FLAGS(pgdir)) panic("vm_free: invalid pgdir.\n");
     if (!level) {
-        // cprintf("vm_free: free 0x%p at level %d.\n", pgdir, level);
         kfree((char*)pgdir);
         return;
     }
     for (uint64_t i = 0; i < ENTRYSZ; ++i) {
-        // cprintf("[%lld]: 0x%llx\n", i, pgdir[i]);
         if (pgdir[i] & PTE_P) {
             uint64_t* v = (uint64_t*)P2V(PTE_ADDR(pgdir[i]));
-            // cprintf("vm_free: free 0x%p at level %d.\n", v, 5 - level);
             vm_free(v, level - 1);
         }
     }

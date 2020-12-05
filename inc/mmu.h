@@ -79,7 +79,7 @@
  * • Any use of the TxSZ value generates a Level 0 Translation fault for the stage of translation
  * at which TxSZ is used.
  */
-#define TCR_T0SZ        (64 - 48) 
+#define TCR_T0SZ        (64 - 48)
 #define TCR_T1SZ        ((64 - 48) << 16)
 #define TCR_TG0_4K      (0 << 14)
 /* Granule size for ttbr1_el1 4KB */

@@ -2,70 +2,6 @@
 
 ## 习题解答
 
-### 0. 一些宏的定义
-
-```c {.line-numbers}
-// inc/mmu.h
-
-/*
- * A virtual address 'va' has a four-part structure as follows:
- * +-----9-----+-----9-----+-----9-----+-----9-----+---------12---------+
- * |  Level 0  |  Level 1  |  Level 2  |  Level 3  | Offset within Page |
- * |   Index   |   Index   |   Index   |   Index   |                    |
- * +-----------+-----------+-----------+-----------+--------------------+
- *  \PTX(va, 0)/\PTX(va, 1)/\PTX(va, 2)/\PTX(va, 3)/
- */
-
-#define PGSIZE 4096
-#define PGSHIFT 12
-#define L0SHIFT 39
-#define L1SHIFT 30
-#define L2SHIFT 21
-#define L3SHIFT 12
-#define ENTRYSZ 512
-
-#define PTX(level, va) (((uint64_t)(va) >> (39 - 9 * level)) & 0x1FF)
-#define L0X(va) (((uint64_t)(va) >> L0SHIFT) & 0x1FF)
-#define L1X(va) (((uint64_t)(va) >> L1SHIFT) & 0x1FF)
-#define L2X(va) (((uint64_t)(va) >> L2SHIFT) & 0x1FF)
-#define L3X(va) (((uint64_t)(va) >> L3SHIFT) & 0x1FF)
-
-/* accessibility */
-#define PTE_P        (1<<0)      /* valid */
-#define PTE_BLOCK    (0<<1)
-#define PTE_PAGE     (1<<1)
-#define PTE_TABLE    (1<<1)      /* entry gives address of the next level of translation table */
-#define PTE_KERNEL   (0<<6)      /* privileged, supervisor EL1 access only */
-#define PTE_USER     (1<<6)      /* unprivileged, EL0 access allowed */
-#define PTE_RW       (0<<7)      /* read-write */
-#define PTE_RO       (1<<7)      /* read-only */
-#define PTE_AF       (1<<10)     /* P2066 access flags */
-// Address in page table or page directory entry
-#define PTE_ADDR(pte)   ((uint64_t)(pte) & ~0xFFF)
-#define PTE_FLAGS(pte)  ((uint64_t)(pte) &  0xFFF)
-```
-
-```c {.line-numbers}
-// inc/memlayout.h
-
-#define EXTMEM 0x80000                /* Start of extended memory */
-#define PHYSTOP 0x3F000000            /* Top physical memory */
-
-#define KERNBASE 0xFFFF000000000000   /* First kernel virtual address */
-#define KERNLINK (KERNBASE + EXTMEM)  /* Address where kernel is linked */
-
-#define V2P_WO(x) ((x) - KERNBASE)    /* Same as V2P, but without casts */
-#define P2V_WO(x) ((x) + KERNBASE)    /* Same as P2V, but without casts */
-
-#ifndef __ASSEMBLER__
-
-#    include <stdint.h>
-#    define V2P(a) (((uint64_t) (a)) - KERNBASE)
-#    define P2V(a) ((void *)(((char *) (a)) + KERNBASE))
-
-#endif
-```
-
 ### 1. 物理内存分配器
 
 > 完成物理内存分配器的分配函数 `kalloc` 以及回收函数 `kfree`。
@@ -74,6 +10,7 @@
 
 ```c {.line-numbers}
 // kern/kalloc.c
+
 struct {
     struct run* free_list; /* Free list of physical pages */
 } kmem;
@@ -202,19 +139,15 @@ pgdir_walk(uint64_t* pgdir, const void* va, int64_t alloc)
 void
 vm_free(uint64_t* pgdir, int level)
 {
-    // cprintf("vm_free: currently at 0x%p at level %d.\n", pgdir, 4 - level);
     if (!pgdir || level < 0) return;
     if (PTE_FLAGS(pgdir)) panic("vm_free: invalid pgdir.\n");
     if (!level) {
-        // cprintf("vm_free: free 0x%p at level %d.\n", pgdir, level);
         kfree((char*)pgdir);
         return;
     }
     for (uint64_t i = 0; i < ENTRYSZ; ++i) {
-        // cprintf("[%lld]: 0x%llx\n", i, pgdir[i]);
         if (pgdir[i] & PTE_P) {
             uint64_t* v = (uint64_t*)P2V(PTE_ADDR(pgdir[i]));
-            // cprintf("vm_free: free 0x%p at level %d.\n", v, 5 - level);
             vm_free(v, level - 1);
         }
     }
