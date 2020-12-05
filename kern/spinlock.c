@@ -26,7 +26,7 @@ initlock(struct spinlock* lk, char* name)
 void
 acquire(struct spinlock* lk)
 {
-    if (holding(lk)) { panic("acquire: spinlock already held\n"); }
+    if (holding(lk)) panic("acquire: spinlock already held.\n");
     while (lk->locked || __atomic_test_and_set(&lk->locked, __ATOMIC_ACQUIRE))
         ;
     lk->cpu = thiscpu;
@@ -35,7 +35,7 @@ acquire(struct spinlock* lk)
 void
 release(struct spinlock* lk)
 {
-    if (!holding(lk)) { panic("release: not locked\n"); }
+    if (!holding(lk)) panic("release: not locked.\n");
     lk->cpu = NULL;
     __atomic_clear(&lk->locked, __ATOMIC_RELEASE);
 }

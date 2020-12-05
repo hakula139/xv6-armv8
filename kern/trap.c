@@ -51,6 +51,5 @@ trap(struct trapframe* tf)
 void
 irq_error(uint64_t type)
 {
-    cprintf("irq_error: - irq_error\n");
-    panic("irq_error: irq of type %d unimplemented. \n", type);
+    panic("irq_error: irq of type %d unimplemented.\n", type);
 }

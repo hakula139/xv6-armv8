@@ -51,7 +51,7 @@ fetchstr(uint64_t addr, char** pp)
 int
 argint(int n, uint64_t* ip)
 {
-    if (n > 3) { panic("argint: too many system call parameters\n"); }
+    if (n > 3) panic("argint: too many system call parameters.\n");
 
     struct proc* proc = thiscpu->proc;
 
