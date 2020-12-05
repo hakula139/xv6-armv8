@@ -5,8 +5,10 @@
 
 #include "syscallno.h"
 
-int argstr(int, char**);
 int argint(int, uint64_t*);
+int argptr(int, char**, int);
+int argstr(int, char**);
+int fetchint(uint64_t, int64_t*);
 int fetchstr(uint64_t, char**);
 
 int syscall();

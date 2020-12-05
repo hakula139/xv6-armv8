@@ -127,7 +127,7 @@ swtch:
 
 ##### 1.4.1 PCB 设计
 
-每个用户进程的 proc (PCB) 中保存了以下数据，详见注释 [^4]：
+每个用户进程的 PCB 中保存了以下数据，详见注释 [^4]：
 
 ```c {.line-number}
 // inc/proc.h
@@ -154,6 +154,8 @@ struct proc {
     char name[16];            // Process name (debugging)
 };
 ```
+
+这里我们选择在每个 `struct proc` 中而非在整个 `struct ptable` 中新增一个自旋锁。这样做的目的是为了使锁的控制粒度更细，实际上这也是 Xv6 for RISC-V [^4] 的实现方法。
 
 ### 2. 系统调用
 

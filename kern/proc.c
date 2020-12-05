@@ -10,7 +10,9 @@
 
 struct cpu cpus[NCPU];
 
-struct proc proc[NPROC];
+struct {
+    struct proc proc[NPROC];
+} ptable;
 
 static struct proc* initproc;
 
@@ -40,7 +42,7 @@ proc_init()
 {
     initlock(&wait_lock, "wait_lock");
     initlock(&pid_lock, "pid_lock");
-    for (struct proc* p = proc; p < &proc[NPROC]; ++p) {
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
         initlock(&p->lock, "proc_lock");
     }
     cprintf("proc_init: success.\n");
@@ -79,7 +81,7 @@ proc_free(struct proc* p)
 static struct proc*
 proc_alloc()
 {
-    for (struct proc* p = proc; p < &proc[NPROC]; ++p) {
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
         acquire(&p->lock);
         if (p->state != UNUSED) {
             release(&p->lock);
