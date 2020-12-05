@@ -9,7 +9,7 @@
 #include "trap.h"
 #include "vm.h"
 
-struct spinlock started_lock = {1};
+volatile static int started = 0;
 
 void
 main()
@@ -32,9 +32,9 @@ main()
         irq_init();
         lvbar(vectors);
         timer_init();
-        started_lock.locked = 0;  // allow APs to run
+        started = 1;  // allow APs to run
     } else {
-        while (started_lock.locked) {}
+        while (!started) {}
         cprintf("CPU %d: Init started.\n", cpuid());
         irq_init();
         lvbar(vectors);
