@@ -33,12 +33,12 @@
 
 其余初始化函数则需要每个内核都调用一次。
 
-这里我们通过一个自旋锁 `started_lock` 来确保以上初始化函数只会在 CPU0 (BSP) 启动过程中被调用一次。当 CPU0 启动完成后，解锁 `started_lock`，唤醒其他 CPU (APs)。具体代码如下：
+这里我们通过一个静态变量 `started` 来确保以上初始化函数只会在 CPU0 (BSP) 启动过程中被调用一次。当 CPU0 启动完成后，将 `started` 设置为 1，允许其他 CPU (APs) 启动。具体代码如下：
 
 ```c {.line-numbers}
 // kern/main.c
 
-struct spinlock started_lock = {1};
+volatile static int started = 0;
 
 void
 main()
@@ -56,9 +56,9 @@ main()
         irq_init();
         lvbar(vectors);
         timer_init();
-        started_lock.locked = 0;  // allow APs to run
+        started = 1;  // allow APs to run
     } else {
-        while (started_lock.locked) {}
+        while (!started) {}
         cprintf("CPU %d: Init started.\n", cpuid());
         irq_init();
         lvbar(vectors);
