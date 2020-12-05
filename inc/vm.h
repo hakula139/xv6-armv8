@@ -8,7 +8,7 @@
 void vm_free(uint64_t*, int);
 void check_map_region();
 void uvm_switch(struct proc*);
-void uvm_init(uint64_t*, char*, int);
+void uvm_init(uint64_t*, char*, uint64_t);
 
 uint64_t* pgdir_init();
 

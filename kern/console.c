@@ -14,6 +14,7 @@ void
 console_init()
 {
     uart_init();
+    cprintf("console_init: success.\n");
 }
 
 static void
@@ -96,8 +97,7 @@ cprintf(const char* fmt, ...)
     acquire(&conslock);
     if (panicked >= 0 && panicked != cpuid()) {
         release(&conslock);
-        while (1)
-            ;
+        while (1) {}
     }
     va_start(ap, fmt);
     vprintfmt(uart_putchar, fmt, ap);
@@ -117,19 +117,17 @@ panic(const char* fmt, ...)
     va_list ap;
 
     acquire(&conslock);
-    if (panicked < 0)
+    if (panicked < 0) {
         panicked = cpuid();
-    else {
+    } else {
         release(&conslock);
-        while (1)
-            ;
+        while (1) {}
     }
     va_start(ap, fmt);
     vprintfmt(uart_putchar, fmt, ap);
     va_end(ap);
     release(&conslock);
 
-    cprintf("%s:%d: kernel panic at cpu %d.\n", __FILE__, __LINE__, cpuid());
-    while (1)
-        ;
+    cprintf("%s:%d: kernel panic at CPU %d.\n", __FILE__, __LINE__, cpuid());
+    while (1) {}
 }

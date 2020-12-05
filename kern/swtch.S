@@ -11,6 +11,7 @@
 
 swtch:
     # Save old callee-saved registers
+    stp x29, x30, [sp, #-16]!
     stp x27, x28, [sp, #-16]!
     stp x25, x26, [sp, #-16]!
     stp x23, x24, [sp, #-16]!
@@ -28,5 +29,6 @@ swtch:
     ldp x23, x24, [sp], #16
     ldp x25, x26, [sp], #16
     ldp x27, x28, [sp], #16
+    ldp x29, x30, [sp], #16
 
     ret

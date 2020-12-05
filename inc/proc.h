@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "arm.h"
+#include "spinlock.h"
 #include "trap.h"
 
 #define NCPU       4    /* maximum number of CPUs */
@@ -17,7 +18,7 @@ struct cpu {
     struct proc* proc;         /* The process running on this cpu or null */
 };
 
-extern struct cpu cpus[NCPU];
+extern struct cpu cpus[];
 
 // Saved registers for kernel context switches.
 struct context {
@@ -32,22 +33,33 @@ struct context {
     uint64_t x26;
     uint64_t x27;
     uint64_t x28;
+
+    uint64_t x29;  // Frame Pointer
+    uint64_t x30;  // Procedure Link Register
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 struct proc {
-    uint64_t sz;             /* Size of process memory (bytes)          */
-    uint64_t* pgdir;         /* Page table                              */
-    char* kstack;            /* Bottom of kernel stack for this process */
-    enum procstate state;    /* Process state                           */
-    int pid;                 /* Process ID                              */
-    struct proc* parent;     /* Parent process                          */
-    struct trapframe* tf;    /* Trapframe for current syscall           */
-    struct context* context; /* swtch() here to run process             */
-    void* chan;              /* If non-zero, sleeping on chan           */
-    int killed;              /* If non-zero, have been killed           */
-    char name[16];           /* Process name (debugging)                */
+    struct spinlock lock;
+
+    // p->lock must be held when using these:
+    enum procstate state;  // Process state
+    void* chan;            // If non-zero, sleeping on chan
+    int killed;            // If non-zero, have been killed
+    int xstate;            // Exit status to be returned to parent's wait
+    int pid;               // Process ID
+
+    // wait_lock must be held when using these:
+    struct proc* parent;  // Parent process
+
+    // no lock needs to be held when using these:
+    char* kstack;             // Bottom of kernel stack for this process
+    uint64_t sz;              // Size of process memory (bytes)
+    uint64_t* pgdir;          // Page table
+    struct trapframe* tf;     // Trapframe for current syscall
+    struct context* context;  // swtch() here to run process
+    char name[16];            // Process name (debugging)
 };
 
 void proc_init();

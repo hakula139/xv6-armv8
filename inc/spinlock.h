@@ -1,8 +1,6 @@
 #ifndef INC_SPINLOCK_H_
 #define INC_SPINLOCK_H_
 
-#include "proc.h"
-
 struct spinlock {
     volatile int locked;
 

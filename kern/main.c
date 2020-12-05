@@ -15,38 +15,28 @@ volatile static int started = 0;
 void
 main()
 {
-    /*
-     * Before doing anything else, we need to ensure that all
-     * static/global variables start out zero.
-     */
-
     extern char edata[], end[], vectors[];
 
     if (cpuid() == 0) {
-        cprintf("main: [CPU 0] init started.\n");
         memset(edata, 0, end - edata);
         console_init();
+        cprintf("main: [CPU 0] init started.\n");
         alloc_init();
-        cprintf("main: allocator init success.\n");
-        check_map_region();
-        check_free_list();
-        irq_init();
+        proc_init();
         lvbar(vectors);
+        irq_init();
         timer_init();
+        user_init();
         started = 1;  // allow APs to run
     } else {
         while (!started) {}
         cprintf("main: [CPU %d] init started.\n", cpuid());
+        lvbar(vectors);
+        irq_init();
     }
 
-    irq_init();
-    proc_init();
-    user_init();
-    lvbar(vectors);
-    timer_init();
     cprintf("main: [CPU %d] init success.\n", cpuid());
 
-    scheduler();
-
+    // scheduler();
     while (1) {}
 }

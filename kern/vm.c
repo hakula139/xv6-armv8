@@ -67,7 +67,8 @@ map_region(uint64_t* pgdir, void* va, uint64_t size, uint64_t pa, int64_t perm)
     for (uint64_t i = 0; i < size; i += PGSIZE) {
         uint64_t* pte = pgdir_walk(pgdir, va + i, 1);
         if (!pte) return 1;
-        *pte = V2P(PTE_ADDR(pa + i)) | perm | PTE_P | PTE_TABLE | PTE_AF;
+        *pte = V2P(PTE_ADDR(pa + i)) | perm | PTE_P | PTE_TABLE
+               | (MT_NORMAL << 2) | PTE_AF | PTE_SH;
     }
     return 0;
 }
@@ -105,20 +106,23 @@ check_map_region()
     asm volatile("msr ttbr0_el1, %[x]" : : [x] "r"(V2P(p)));
 
     if (*((uint64_t*)0x1000) == 0xac) {
-        cprintf("check_map_region: passed!\n");
+        cprintf("check_map_region: passed.\n");
     } else {
-        cprintf("check_map_region: failed!\n");
+        panic("check_map_region: failed.\n");
     }
 
     vm_free((uint64_t*)p, 4);
-    cprintf("check_vm_free: passed!\n");
+    cprintf("check_vm_free: passed.\n");
 }
 
 /* Get a new page table */
 uint64_t*
 pgdir_init()
 {
-    /* TODO: Your code here. */
+    uint64_t* pgdir;
+    if (!(pgdir = (uint64_t*)kalloc())) return NULL;
+    memset(pgdir, 0, PGSIZE);
+    return pgdir;
 }
 
 /*
@@ -128,9 +132,15 @@ pgdir_init()
  * additional PTE_USER|PTE_RW|PTE_PAGE permission
  */
 void
-uvm_init(uint64_t* pgdir, char* binary, int sz)
+uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 {
-    /* TODO: Your code here. */
+    char* mem;
+    if (sz >= PGSIZE) panic("uvm_init: sz must be less than a page.\n");
+    if (!(mem = kalloc())) panic("uvm_init: not enough memory.\n");
+    memset(mem, 0, PGSIZE);
+    map_region(
+        pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
+    memmove((void*)mem, (const void*)binary, sz);
 }
 
 /*

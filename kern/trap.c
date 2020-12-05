@@ -10,14 +10,15 @@
 #include "console.h"
 #include "proc.h"
 #include "timer.h"
+#include "uart.h"
 
 void
 irq_init()
 {
-    cprintf("irq_init: - irq init\n");
     clock_init();
     put32(ENABLE_IRQS_1, AUX_INT);
     put32(GPU_INT_ROUTE, GPU_IRQ2CORE(0));
+    cprintf("irq_init: success at CPU %d.\n", cpuid());
 }
 
 void

@@ -8,16 +8,29 @@
 #include "trap.h"
 #include "vm.h"
 
-struct {
-    struct proc proc[NPROC];
-} ptable;
+struct cpu cpus[NCPU];
+
+struct proc proc[NPROC];
 
 static struct proc* initproc;
 
 int nextpid = 1;
+struct spinlock pid_lock;
+
+struct spinlock wait_lock;
+
 void forkret();
 extern void trapret();
 void swtch(struct context**, struct context*);
+
+int
+pid_next()
+{
+    acquire(&pid_lock);
+    int pid = nextpid++;
+    release(&pid_lock);
+    return pid;
+}
 
 /*
  * Initialize the spinlock for ptable to serialize the access to ptable
@@ -25,26 +38,87 @@ void swtch(struct context**, struct context*);
 void
 proc_init()
 {
-    /* TODO: Your code here. */
+    initlock(&wait_lock, "wait_lock");
+    initlock(&pid_lock, "pid_lock");
+    for (struct proc* p = proc; p < &proc[NPROC]; ++p) {
+        initlock(&p->lock, "proc_lock");
+    }
+    cprintf("proc_init: success.\n");
+}
+
+/*
+ * Free a proc structure and the data hanging from it,
+ * including user pages.
+ * p->lock must be held.
+ */
+static void
+proc_free(struct proc* p)
+{
+    p->chan = NULL;
+    p->killed = 0;
+    p->xstate = 0;
+    p->pid = 0;
+    p->parent = NULL;
+    if (p->kstack) kfree(p->kstack);
+    p->kstack = NULL;
+    p->sz = 0;
+    if (p->pgdir) kfree((char*)p->pgdir);
+    p->pgdir = NULL;
+    if (p->tf) kfree((char*)p->tf);
+    p->tf = NULL;
+    p->name[0] = '\0';
+    p->state = UNUSED;
 }
 
 /*
  * Look through the process table for an UNUSED proc.
  * If found, change state to EMBRYO and initialize
- * state (allocate stack, clear trapframe, set context for switch...)
- * required to run in the kernel. Otherwise return 0.
+ * state required to run in the kernel.
+ * Otherwise return 0.
  */
 static struct proc*
 proc_alloc()
 {
-    struct proc* p;
-    /* TODO: Your code here. */
+    for (struct proc* p = proc; p < &proc[NPROC]; ++p) {
+        acquire(&p->lock);
+        if (p->state != UNUSED) {
+            release(&p->lock);
+            continue;
+        }
 
-    return p;
+        p->pid = pid_next();
+
+        // Allocate kernel stack.
+        if (!(p->kstack = kalloc())) {
+            proc_free(p);
+            release(&p->lock);
+            return NULL;
+        }
+        char* sp = p->kstack + KSTACKSIZE;
+
+        // Allocate a trapframe page.
+        if (!(p->tf = (struct trapframe*)kalloc())) {
+            proc_free(p);
+            release(&p->lock);
+            return NULL;
+        }
+
+        // Set up new context to start executing at forkret,
+        // which returns to user space.
+        sp -= sizeof(*p->context);
+        p->context = (struct context*)sp;
+        memset(p->context, 0, sizeof(*p->context));
+        p->context->x30 = (uint64_t)forkret;
+
+        p->state = EMBRYO;
+        cprintf("proc_alloc: proc %d success.\n", p->pid);
+        return p;
+    }
+    return NULL;
 }
 
 /*
- * Set up first user process(Only used once).
+ * Set up first user process (only used once).
  * Set trapframe for the new process to run
  * from the beginning of the user process determined
  * by uvm_init
@@ -52,14 +126,36 @@ proc_alloc()
 void
 user_init()
 {
-    struct proc* p;
-    /* for why our symbols differ from xv6, please refer
+    /* For why our symbols differ from xv6, please refer to
      * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
      */
     extern char _binary_obj_user_initcode_start[];
     extern char _binary_obj_user_initcode_size[];
 
-    /* TODO: Your code here. */
+    struct proc* p = proc_alloc();
+    if (!p) panic("user_init: process failed to allocate.\n");
+    initproc = p;
+
+    // Allocate a user page table.
+    if (!(p->pgdir = pgdir_init()))
+        panic("user_init: page table failed to allocate.\n");
+    p->sz = PGSIZE;
+
+    // Copy initcode into the page table.
+    uvm_init(
+        p->pgdir, _binary_obj_user_initcode_start,
+        (uint64_t)_binary_obj_user_initcode_size);
+
+    // Set up trapframe to prepare for the first "return" from kernel to user.
+    memset(p->tf, 0, sizeof(*p->tf));
+    p->tf->x30 = 0;          // initcode start address
+    p->tf->sp_el0 = PGSIZE;  // user stack pointer
+
+    strncpy(p->name, "initcode", sizeof(p->name));
+    p->state = RUNNABLE;
+    release(&p->lock);
+
+    cprintf("user_init: proc %d (%s) success.\n", p->pid, p->name, cpuid());
 }
 
 /*

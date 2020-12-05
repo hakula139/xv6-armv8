@@ -12,7 +12,7 @@
 
 本图引自 *xv6: a simple, Unix-like teaching operating system* [^1]。
 
-如图所示，trapframe 的实例存在进程的用户地址空间（user address space）。为什么 PCB 中仅存储 trapframe 的指针？因为 trapframe 是一个保存了所有通用寄存器和一些特殊寄存器的结构。一方面，trap 时需要用到 trapframe 中的数据，所以它应当以某种形式存储在 PCB 中；另一方面，trap 时我们只能传入 trapframe 指针，因为硬件没有提供足够多的寄存器来在函数调用时传入整个 trapframe 结构。因此，在 PCB 中仅存储 trapframe 指针是一个节省空间的方案，trap 时只需一个寄存器用于保存 trapframe 指针即可 [^1]。
+如图所示，trapframe 的实例存在进程的用户地址空间（user address space）。为什么 PCB 中仅存储 trapframe 的指针？因为 trapframe 是一个保存了所有通用寄存器和一些特殊寄存器的结构。一方面，trap 时需要用到 trapframe 中的数据，所以它应当以某种形式存储在 PCB 中；另一方面，trap 时我们只能传入 trapframe 指针，因为硬件没有提供足够多的寄存器来在 trap 时传入整个 trapframe 结构。因此，在 PCB 中仅存储 trapframe 指针是一个节省空间的方案，trap 时只需一个寄存器用于传入 trapframe 指针即可 [^1]。
 
 ![context switch](./assets/context_switch.png)
 
@@ -24,7 +24,9 @@ context 的实例存在执行 context switch 的内核所对应的 kernel stack 
 
 > 请完成 `inc/proc.h` 中 `struct context` 的定义以及 `kern/swtch.S` 中 context switch 的实现。
 
-`struct context` 中仅需保存 callee-saved 寄存器即可 [^1]，根据 ARM 开发文档 [^2]，即通用寄存器 X19 ~ X28。
+##### 1.2.1 Context 设计
+
+context 中需要保存所有的 callee-saved 寄存器 [^1]，根据 ARM 开发文档 [^2]，即通用寄存器 X19 ~ X28。此外，我们额外保存寄存器 X29 (Frame Pointer) 和 X30 (Procedure Link Register)，其中 X30 用于指定用户进程初次运行的地址。
 
 ```c {.line-number}
 // inc/proc.h
@@ -41,8 +43,13 @@ struct context {
     uint64_t x26;
     uint64_t x27;
     uint64_t x28;
+
+    uint64_t x29;  // Frame Pointer
+    uint64_t x30;  // Procedure Link Register
 };
 ```
+
+##### 1.2.2 Context switch 实现
 
 context switch 主要做了以下几件事情 [^3]：
 
@@ -118,6 +125,36 @@ swtch:
 
 > 请根据 `kern/proc.c` 中相应代码的注释完成内核进程管理模块以支持调度第一个用户进程 `user/initcode.S`。
 
+##### 1.4.1 PCB 设计
+
+每个用户进程的 proc (PCB) 中保存了以下数据，详见注释 [^4]：
+
+```c {.line-number}
+// inc/proc.h
+
+struct proc {
+    struct spinlock lock;
+
+    // p->lock must be held when using these:
+    enum procstate state;  // Process state
+    void* chan;            // If non-zero, sleeping on chan
+    int killed;            // If non-zero, have been killed
+    int xstate;            // Exit status to be returned to parent's wait
+    int pid;               // Process ID
+
+    // wait_lock must be held when using these:
+    struct proc* parent;  // Parent process
+
+    // no lock needs to be held when using these:
+    char* kstack;             // Bottom of kernel stack for this process
+    uint64_t sz;              // Size of process memory (bytes)
+    uint64_t* pgdir;          // Page table
+    struct trapframe* tf;     // Trapframe for current syscall
+    struct context* context;  // swtch() here to run process
+    char name[16];            // Process name (debugging)
+};
+```
+
 ### 2. 系统调用
 
 #### 2.1 系统调用模块
@@ -136,4 +173,5 @@ swtch:
 
 [^1]: [xv6: a simple, Unix-like teaching operating system - MIT](https://pdos.csail.mit.edu/6.828/2020/xv6/book-riscv-rev1.pdf)  
 [^2]: [AArch64 Instruction Set Architecture | Procedure Call Standard – Arm Developer](https://developer.arm.com/architectures/learn-the-architecture/aarch64-instruction-set-architecture/procedure-call-standard)  
-[^3]: [mit-pdos/xv6-public: xv6 OS - GitHub](https://github.com/mit-pdos/xv6-public/blob/master/swtch.S)
+[^3]: [mit-pdos/xv6-public: xv6 OS - GitHub](https://github.com/mit-pdos/xv6-public)  
+[^4]: [mit-pdos/xv6-riscv: Xv6 for RISC-V - GitHub](https://github.com/mit-pdos/xv6-riscv)

@@ -13,6 +13,7 @@ timer_init()
     asm volatile("msr cntp_ctl_el0, %[x]" : : [x] "r"(1));
     asm volatile("msr cntp_tval_el0, %[x]" : : [x] "r"(dt));
     put32(CORE_TIMER_CTRL(cpuid()), CORE_TIMER_ENABLE);
+    cprintf("timer_init: success.\n");
 }
 
 void
@@ -28,5 +29,5 @@ timer_reset()
 void
 timer()
 {
-    cprintf("timer: cpu %d timer.\n", cpuid());
+    cprintf("timer: CPU %d timer.\n", cpuid());
 }
