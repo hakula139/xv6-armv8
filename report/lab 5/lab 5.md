@@ -24,7 +24,7 @@ context 的实例存在执行 context switch 的内核所对应的 kernel stack 
 
 > 请完成 `inc/proc.h` 中 `struct context` 的定义以及 `kern/swtch.S` 中 context switch 的实现。
 
-##### 1.2.1 Context 设计
+##### 1.2.1 Context 设计：`struct context`
 
 context 中需要保存所有的 callee-saved 寄存器 [^1]，根据 ARM 开发文档 [^2]，即通用寄存器 X19 ~ X28。此外，我们额外保存寄存器 X29 (Frame Pointer) 和 X30 (Procedure Link Register)，其中 X30 用于指定用户进程初次运行的地址。
 
@@ -117,7 +117,7 @@ swtch:
 
 ##### 1.3.4
 
-> trapframe **似乎** 已经包含了 context 中的内容，为什么上下文切换时还需要先 trap 再 switch？
+> trapframe **似乎**已经包含了 context 中的内容，为什么上下文切换时还需要先 trap 再 switch？
 
 因为 trap 过程是从用户态切换到内核态的过程，switch 过程是内核态中的过程。上下文切换需要在内核态中进行，因此还是要先 trap 再 switch。虽然 trapframe 似乎包含了 context 中的内容，但它们完全是两个不同的东西，有着不同的用途，保存在不同的位置，因此也无法复用其中的数据。
 
@@ -125,9 +125,9 @@ swtch:
 
 > 请根据 `kern/proc.c` 中相应代码的注释完成内核进程管理模块以支持调度第一个用户进程 `user/initcode.S`。
 
-##### 1.4.1 PCB 设计
+##### 1.4.1 PCB 设计：`struct proc`
 
-每个用户进程的 PCB 中保存了以下数据，详见注释 [^4]：
+每个用户进程的 PCB 中保存了以下数据，具体作用参见注释 [^4]：
 
 ```c {.line-number}
 // inc/proc.h
@@ -155,7 +155,218 @@ struct proc {
 };
 ```
 
-这里我们选择在每个 `struct proc` 中而非在整个 `struct ptable` 中新增一个自旋锁。这样做的目的是为了使锁的控制粒度更细，实际上这也是 Xv6 for RISC-V [^4] 的实现方法。
+##### 1.4.2 锁的初始化：`proc_init`
+
+函数 `proc_init` 的主要工作是完成 `ptable` 锁的初始化，以处理多核的并发问题。这里我们不是在整个 `struct ptable` 中，而是选择在每个 `struct proc` 中新增一个自旋锁 `proc_lock`。这样做的目的是为了使锁的控制粒度更细，实际上这也是 Xv6 for RISC-V [^4] 的实现方法。
+
+在获取进程 `pid` 时，同样也存在并发问题，因此这里也为 `pid` 新增了一个自旋锁 `pid_lock`。自旋锁 `wait_lock` 则是为了确保父进程在子进程返回前维持等待状态，防止子进程在访问父进程 `p->parent` 时发现父进程已丢失。
+
+```c {.line-number}
+// kern/proc.c
+
+/*
+ * Initialize the spinlock for ptable to serialize the access to ptable
+ */
+void
+proc_init()
+{
+    initlock(&wait_lock, "wait_lock");
+    initlock(&pid_lock, "pid_lock");
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        initlock(&p->lock, "proc_lock");
+    }
+    cprintf("proc_init: success.\n");
+}
+```
+
+##### 1.4.3 创建新进程：`proc_alloc`
+
+函数 `proc_alloc` 的主要工作是遍历进程表 `ptable`，找到一个 UNUSED 进程，进行内核部分的初始化工作，最后返回进程的 `proc` 指针。具体来说：
+
+1. 利用函数 `pid_next` (`kern/proc.c`) 分配 PID
+2. 利用函数 `kalloc` (`kern/kalloc.c`) 分配内核栈 kstack
+3. 利用函数 `kalloc` 为内核态下的 trapframe 分配一个页
+4. 在 kstack 的栈顶分配一块空间作为 context，并进行初始化；其中寄存器 X30 保存函数 `forkret` 的地址，作为进程初次返回用户态时的启动地址
+5. 设置进程状态为 EMBRYO
+
+如果创建进程失败，则返回 `NULL`。
+
+```c {.line-number}
+// kern/proc.c
+
+/*
+ * Look through the process table for an UNUSED proc.
+ * If found, change state to EMBRYO and initialize
+ * state required to run in the kernel.
+ * Otherwise return 0.
+ */
+static struct proc*
+proc_alloc()
+{
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        acquire(&p->lock);
+        if (p->state != UNUSED) {
+            release(&p->lock);
+            continue;
+        }
+
+        p->pid = pid_next();
+
+        // Allocate kernel stack.
+        if (!(p->kstack = kalloc())) {
+            proc_free(p);
+            release(&p->lock);
+            return NULL;
+        }
+        char* sp = p->kstack + KSTACKSIZE;
+
+        // Allocate a trapframe page.
+        if (!(p->tf = (struct trapframe*)kalloc())) {
+            proc_free(p);
+            release(&p->lock);
+            return NULL;
+        }
+
+        // Set up new context to start executing at forkret,
+        // which returns to user space.
+        sp -= sizeof(*p->context);
+        p->context = (struct context*)sp;
+        memset(p->context, 0, sizeof(*p->context));
+        p->context->x30 = (uint64_t)forkret;
+
+        p->state = EMBRYO;
+        cprintf("proc_alloc: proc %d success.\n", p->pid);
+        return p;
+    }
+    return NULL;
+}
+```
+
+其中，函数 `proc_free` 的作用是清空进程的 PCB，并利用函数 `kfree` 释放申请的内存。
+
+```c {.line-number}
+// kern/proc.c
+
+/*
+ * Free a proc structure and the data hanging from it,
+ * including user pages.
+ * p->lock must be held.
+ */
+static void
+proc_free(struct proc* p)
+{
+    p->chan = NULL;
+    p->killed = 0;
+    p->xstate = 0;
+    p->pid = 0;
+    p->parent = NULL;
+    if (p->kstack) kfree(p->kstack);
+    p->kstack = NULL;
+    p->sz = 0;
+    if (p->pgdir) kfree((char*)p->pgdir);
+    p->pgdir = NULL;
+    if (p->tf) kfree((char*)p->tf);
+    p->tf = NULL;
+    p->name[0] = '\0';
+    p->state = UNUSED;
+}
+```
+
+##### 1.4.4 初始化用户进程：`user_init`
+
+函数 `user_init` 的主要工作是初始化第一个用户进程。具体来说：
+
+1. 利用函数 `proc_alloc` (`kern/proc.c`) 进行内核部分的初始化
+2. 利用函数 `pgdir_init` (`kern/vm.c`) 分配一个用户页表，并指定进程的内存空间为一个页表的大小 `PGSIZE`
+3. 利用函数 `uvm_init` (`kern/vm.c`) 将初始化二进制码 `initcode` 加载到页表的起始位置，进行页表初始化
+4. 清空 trapframe，并进行初始化；其中寄存器 X30 保存 `initcode` 在页表中的起始地址（即 `0x0`），寄存器 SP_EL0 保存用户栈的初始栈指针（即 `PGSIZE`）
+5. 设置进程名为 `initcode`（用于调试）
+6. 设置进程状态为 RUNNABLE
+
+需要注意的是，函数 `user_init` 只需在 CPU0 中运行一次（在这个坑上我花了 3 个多小时调试 orz）。
+
+```c {.line-number}
+// kern/proc.c
+
+/*
+ * Set up first user process (only used once).
+ * Set trapframe for the new process to run
+ * from the beginning of the user process determined
+ * by uvm_init
+ */
+void
+user_init()
+{
+    /* For why our symbols differ from xv6, please refer to
+     * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
+     */
+    extern char _binary_obj_user_initcode_start[];
+    extern char _binary_obj_user_initcode_size[];
+
+    struct proc* p = proc_alloc();
+    if (!p) panic("user_init: process failed to allocate.\n");
+    initproc = p;
+
+    // Allocate a user page table.
+    if (!(p->pgdir = pgdir_init()))
+        panic("user_init: page table failed to allocate.\n");
+    p->sz = PGSIZE;
+
+    // Copy initcode into the page table.
+    uvm_init(
+        p->pgdir, _binary_obj_user_initcode_start,
+        (uint64_t)_binary_obj_user_initcode_size);
+
+    // Set up trapframe to prepare for the first "return" from kernel to user.
+    memset(p->tf, 0, sizeof(*p->tf));
+    p->tf->x30 = 0;          // initcode start address
+    p->tf->sp_el0 = PGSIZE;  // user stack pointer
+
+    strncpy(p->name, "initcode", sizeof(p->name));
+    p->state = RUNNABLE;
+    release(&p->lock);
+
+    cprintf("user_init: proc %d (%s) success.\n", p->pid, p->name, cpuid());
+}
+```
+
+其中，函数 `pgdir_init` 用于获取一个新页表，函数 `uvm_init` 用于将二进制码加载到页表。
+
+```c {.line-number}
+// kern/vm.c
+
+/* Get a new page table */
+uint64_t*
+pgdir_init()
+{
+    uint64_t* pgdir;
+    if (!(pgdir = (uint64_t*)kalloc())) return NULL;
+    memset(pgdir, 0, PGSIZE);
+    return pgdir;
+}
+```
+
+```c {.line-number}
+// kern/vm.c
+
+/*
+ * Load binary code into address 0 of pgdir.
+ * sz must be less than a page.
+ * The page table entry should be set with
+ * additional PTE_USER|PTE_RW|PTE_PAGE permission
+ */
+void
+uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
+{
+    char* mem;
+    if (sz >= PGSIZE) panic("uvm_init: sz must be less than a page.\n");
+    if (!(mem = kalloc())) panic("uvm_init: not enough memory.\n");
+    memset(mem, 0, PGSIZE);
+    map_region(
+        pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
+    memmove((void*)mem, (const void*)binary, sz);
+}
+```
 
 ### 2. 系统调用
 
