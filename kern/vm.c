@@ -12,7 +12,9 @@
 
 extern uint64_t* kpgdir;
 
-// If the page is invalid, then alloc a new one. Return NULL if failed.
+/*
+ * If the page is invalid, then allocate a new one. Return NULL if failed.
+ */
 static uint64_t*
 pde_validate(uint64_t* pde, int64_t alloc)
 {
@@ -59,8 +61,6 @@ pgdir_walk(uint64_t* pgdir, const void* va, int64_t alloc)
  * be page-aligned.
  * Use permission bits perm|PTE_P|PTE_TABLE|(MT_NORMAL << 2)|PTE_AF|PTE_SH for
  * the entries.
- *
- * Hint: call pgdir_walk to get the corresponding page table entry
  */
 static int
 map_region(uint64_t* pgdir, void* va, uint64_t size, uint64_t pa, int64_t perm)
@@ -76,8 +76,6 @@ map_region(uint64_t* pgdir, void* va, uint64_t size, uint64_t pa, int64_t perm)
 
 /*
  * Free a page table.
- *
- * Hint: You need to free all existing PTEs for this pgdir.
  */
 void
 vm_free(uint64_t* pgdir, int level)
@@ -116,7 +114,9 @@ check_map_region()
     cprintf("check_vm_free: passed.\n");
 }
 
-/* Get a new page table */
+/*
+ * Get a new page table.
+ */
 uint64_t*
 pgdir_init()
 {
@@ -130,7 +130,7 @@ pgdir_init()
  * Load binary code into address 0 of pgdir.
  * sz must be less than a page.
  * The page table entry should be set with
- * additional PTE_USER|PTE_RW|PTE_PAGE permission
+ * additional PTE_USER|PTE_RW|PTE_PAGE permission.
  */
 void
 uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
@@ -145,7 +145,7 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 }
 
 /*
- * Switch to the process's own page table for execution of it
+ * Switch to the process's own page table for execution of it.
  */
 void
 uvm_switch(struct proc* p)

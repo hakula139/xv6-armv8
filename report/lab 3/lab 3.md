@@ -77,11 +77,10 @@ struct trapframe {
 ```assembly {.line-number}
 # kern/trapasm.S
 
-/* vectors.S send all traps here. */
+/* vectors.S sends all traps here. */
 .global alltraps
 alltraps:
-    /* Build your trap frame. */
-
+    /* Build trapframe. */
     stp x29, x30, [sp, #-16]!
     stp x27, x28, [sp, #-16]!
     stp x25, x26, [sp, #-16]!
@@ -104,8 +103,7 @@ alltraps:
     stp x3, x0, [sp, #-16]!
     stp x1, x2, [sp, #-16]!
 
-    /* Call trap(struct *trapframe). */
-
+    /* Call trap(struct trapframe*). */
     add x0, sp, #0
     bl  trap
 ```
@@ -121,7 +119,6 @@ alltraps:
 .global trapret
 trapret:
     /* Restore registers. */
-
     ldp x1, x2, [sp], #16
     ldp x3, x0, [sp], #16
     msr sp_el0, x1

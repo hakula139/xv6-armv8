@@ -74,7 +74,9 @@ kfree(char* v)
 ```c {.line-numbers}
 // kern/vm.c
 
-// If the page is invalid, then alloc a new one. Return NULL if failed.
+/*
+ * If the page is invalid, then allocate a new one. Return NULL if failed.
+ */
 static uint64_t*
 pde_validate(uint64_t* pde, int64_t alloc)
 {
@@ -133,8 +135,6 @@ pgdir_walk(uint64_t* pgdir, const void* va, int64_t alloc)
 
 /*
  * Free a page table.
- *
- * Hint: You need to free all existing PTEs for this pgdir.
  */
 void
 vm_free(uint64_t* pgdir, int level)
