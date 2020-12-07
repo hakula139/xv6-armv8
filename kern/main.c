@@ -32,6 +32,7 @@ main()
         while (!started) {}
         cprintf("main: [CPU %d] init started.\n", cpuid());
         lvbar(vectors);
+        timer_init();
     }
 
     cprintf("main: [CPU %d] init success.\n", cpuid());

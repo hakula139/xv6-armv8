@@ -220,6 +220,20 @@ sched()
 }
 
 /*
+ * Give up the CPU for one scheduling round.
+ */
+void
+yield()
+{
+    struct proc* p = thiscpu->proc;
+    acquire(&p->lock);
+    p->state = RUNNABLE;
+    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
+    sched();
+    release(&p->lock);
+}
+
+/*
  * A fork child's very first scheduling by scheduler()
  * will swtch to forkret. "Return" to user space.
  */
@@ -230,6 +244,8 @@ forkret()
 
     // Still holding p->lock from scheduler.
     release(&p->lock);
+
+    trapret();
 }
 
 /*

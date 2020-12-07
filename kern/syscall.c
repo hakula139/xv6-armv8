@@ -1,10 +1,13 @@
 #include "syscall.h"
+
 #include "console.h"
 #include "proc.h"
 #include "string.h"
+#include "syscallno.h"
 
 /*
- * User code makes a system call with SVC, system call number in r0.
+ * User code makes a system call with SVC.
+ * System call number in r0.
  * Arguments on the stack, from the user call to the C
  * library system call function.
  */
@@ -99,28 +102,23 @@ argstr(int n, char** pp)
 extern int sys_exec();
 extern int sys_exit();
 
-/*
- * in ARM, parameters to main (argc, argv) are passed in r0 and r1
- * do not set the return value if it is SYS_exec (the user program
- * anyway does not expect us to return anything).
- */
-/* syscall handler */
+static int (*syscalls[])() = {
+    [SYS_exec] sys_exec,
+    [SYS_exit] sys_exit,
+};
+
 int
 syscall()
 {
-    struct proc* proc = thiscpu->proc;
-    /*
-     * Determine the cause and then jump to the corresponding handle
-     * the handler may look like
-     * switch (syscall number) {
-     *      SYS_XXX:
-     *          return sys_XXX();
-     *      SYS_YYY:
-     *          return sys_YYY();
-     *      default:
-     *          panic("syscall: unknown syscall %d\n", syscall number)
-     * }
-     */
-    /* TODO: Your code here. */
+    struct proc* p = thiscpu->proc;
+    int num = p->tf->x0;
+    if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
+        p->tf->x30 = (uint64_t)syscalls[num]();
+    } else {
+        p->tf->x30 = 0;
+        panic(
+            "syscall: unknown syscall %d from proc %d (%s) at CPU %d.\n", num,
+            p->pid, p->name, cpuid());
+    }
     return 0;
 }

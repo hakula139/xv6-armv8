@@ -65,7 +65,7 @@ struct proc {
 void proc_init();
 void user_init();
 void scheduler();
-
+void yield();
 void exit(int);
 
 #endif  // INC_PROC_H_

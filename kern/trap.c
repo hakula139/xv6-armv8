@@ -24,29 +24,32 @@ irq_init()
 void
 trap(struct trapframe* tf)
 {
-    struct proc* proc = thiscpu->proc;
+    struct proc* p = thiscpu->proc;
     int src = get32(IRQ_SRC_CORE(cpuid()));
+    int bad = 0;
     if (src & IRQ_CNTPNSIRQ) {
-        timer(), timer_reset();
+        timer(), timer_reset(), yield();
     } else if (src & IRQ_TIMER) {
         clock(), clock_reset();
     } else if (src & IRQ_GPU) {
         if (get32(IRQ_PENDING_1) & AUX_INT)
             uart_intr();
         else
-            goto bad;
+            bad = 1;
     } else {
         switch (resr() >> EC_SHIFT) {
         case EC_SVC64:
             lesr(0); /* Clear esr. */
             /* Jump to syscall to handle the system call from user process */
-            /* TODO: Your code here. */
+            if (p->killed) exit(-1);
+            p->tf = tf;
+            syscall();
+            if (p->killed) exit(-1);
             break;
-        default:
-        bad:
-            panic("trap: unexpected irq.\n");
+        default: bad = 1;
         }
     }
+    if (bad) panic("trap: unexpected irq.\n");
 }
 
 void
