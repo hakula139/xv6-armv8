@@ -13,7 +13,7 @@ uart_putchar(int c)
     put32(AUX_MU_IO_REG, c & 0xFF);
 }
 
-char
+void
 uart_intr()
 {
     for (int stat; !((stat = get32(AUX_MU_IIR_REG)) & 1);)

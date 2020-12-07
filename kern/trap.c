@@ -27,6 +27,7 @@ trap(struct trapframe* tf)
     struct proc* p = thiscpu->proc;
     int src = get32(IRQ_SRC_CORE(cpuid()));
     int bad = 0;
+
     if (src & IRQ_CNTPNSIRQ) {
         timer(), timer_reset(), yield();
     } else if (src & IRQ_TIMER) {
