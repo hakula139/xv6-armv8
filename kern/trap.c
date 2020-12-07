@@ -29,7 +29,7 @@ trap(struct trapframe* tf)
     int bad = 0;
 
     if (src & IRQ_CNTPNSIRQ) {
-        timer(), timer_reset(), yield();
+        timer(), timer_reset();
     } else if (src & IRQ_TIMER) {
         clock(), clock_reset();
     } else if (src & IRQ_GPU) {
@@ -42,10 +42,10 @@ trap(struct trapframe* tf)
         case EC_SVC64:
             lesr(0); /* Clear esr. */
             /* Jump to syscall to handle the system call from user process */
-            if (p->killed) exit(-1);
+            if (p->killed) exit(1);
             p->tf = tf;
             syscall();
-            if (p->killed) exit(-1);
+            if (p->killed) exit(1);
             break;
         default: bad = 1;
         }

@@ -113,12 +113,13 @@ syscall()
     struct proc* p = thiscpu->proc;
     int num = p->tf->x0;
     if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
-        p->tf->x30 = (uint64_t)syscalls[num]();
+        cprintf("syscall: proc %d calls %d.\n", p->pid, num);
+        return syscalls[num]();
     } else {
-        p->tf->x30 = 0;
-        panic(
-            "\tsyscall: unknown syscall %d from proc %d (%s) at CPU %d.\n", num,
-            p->pid, p->name, cpuid());
+        cprintf(
+            "syscall: unknown syscall %d from proc %d (%s).\n", num, p->pid,
+            p->name);
+        return -1;
     }
     return 0;
 }

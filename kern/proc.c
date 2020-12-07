@@ -23,6 +23,7 @@ struct spinlock pid_lock;
 struct spinlock wait_lock;
 
 void forkret();
+extern void usertrapret(struct trapframe*);
 extern void trapret();
 void swtch(struct context**, struct context*);
 
@@ -67,7 +68,6 @@ proc_free(struct proc* p)
     p->sz = 0;
     if (p->pgdir) kfree((char*)p->pgdir);
     p->pgdir = NULL;
-    if (p->tf) kfree((char*)p->tf);
     p->tf = NULL;
     p->name[0] = '\0';
     p->state = UNUSED;
@@ -99,12 +99,9 @@ proc_alloc()
         }
         char* sp = p->kstack + KSTACKSIZE;
 
-        // Allocate a trapframe page.
-        if (!(p->tf = (struct trapframe*)kalloc())) {
-            proc_free(p);
-            release(&p->lock);
-            return NULL;
-        }
+        // Leave room for trapframe.
+        sp -= sizeof(*p->tf);
+        p->tf = (struct trapframe*)sp;
 
         // Set up new context to start executing at forkret.
         sp -= sizeof(*p->context);
@@ -149,6 +146,8 @@ user_init()
     memset(p->tf, 0, sizeof(*p->tf));
     p->tf->x30 = 0;          // initcode start address
     p->tf->sp_el0 = PGSIZE;  // user stack pointer
+    p->tf->spsr_el1 = 0;     // program status register
+    p->tf->elr_el1 = 0;      // exception link register
 
     strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
@@ -245,7 +244,8 @@ forkret()
     // Still holding p->lock from scheduler.
     release(&p->lock);
 
-    trapret();
+    // Pass trapframe pointer as an argument when calling trapret.
+    usertrapret(p->tf);
 }
 
 /*
@@ -284,6 +284,5 @@ exit(int status)
 
     // Jump into the scheduler, never return.
     sched();
-
     panic("\texit: zombie returned!\n");
 }

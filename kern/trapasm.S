@@ -25,7 +25,7 @@ alltraps:
     stp x1, x2, [sp, #-16]!
 
     /* Call trap(struct trapframe*). */
-    add x0, sp, #0
+    mov x0, sp
     bl  trap
 
 /* Return falls through to trapret. */
@@ -55,3 +55,10 @@ trapret:
     ldp x29, x30, [sp], #16
 
     eret
+
+/* Help forkret to call trapret in an expected way. */
+.global usertrapret
+usertrapret:
+    /* Overlay stack pointer in trapret. */
+    mov sp, x0
+    b   trapret
