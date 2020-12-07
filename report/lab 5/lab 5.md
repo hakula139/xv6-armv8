@@ -227,8 +227,7 @@ proc_alloc()
             return NULL;
         }
 
-        // Set up new context to start executing at forkret,
-        // which returns to user space.
+        // Set up new context to start executing at forkret.
         sp -= sizeof(*p->context);
         p->context = (struct context*)sp;
         memset(p->context, 0, sizeof(*p->context));
@@ -280,7 +279,7 @@ proc_free(struct proc* p)
 2. 利用函数 `pgdir_init` (`kern/vm.c`) 分配一个用户页表，并指定进程的内存空间为一个页表的大小 `PGSIZE`
 3. 利用函数 `uvm_init` (`kern/vm.c`) 将初始化二进制码 `initcode` 加载到页表的起始位置，进行页表初始化
 4. 清空 trapframe，并进行初始化；其中寄存器 X30 保存 `initcode` 在页表中的起始地址（即 `0x0`），寄存器 SP_EL0 保存用户栈的初始栈指针（即 `PGSIZE`）
-5. 设置进程名为 `initcode`（用于调试）
+5. 设置进程名为 `initproc`
 6. 设置进程状态为 RUNNABLE
 
 需要注意的是，函数 `user_init` 只需在 CPU0 中运行一次（在这个坑上我花了 3 个多小时调试 orz）。
@@ -297,9 +296,6 @@ proc_free(struct proc* p)
 void
 user_init()
 {
-    /* For why our symbols differ from xv6, please refer to
-     * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
-     */
     extern char _binary_obj_user_initcode_start[];
     extern char _binary_obj_user_initcode_size[];
 
@@ -322,7 +318,7 @@ user_init()
     p->tf->x30 = 0;          // initcode start address
     p->tf->sp_el0 = PGSIZE;  // user stack pointer
 
-    strncpy(p->name, "initcode", sizeof(p->name));
+    strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
     release(&p->lock);
 

@@ -18,7 +18,7 @@ irq_init()
     clock_init();
     put32(ENABLE_IRQS_1, AUX_INT);
     put32(GPU_INT_ROUTE, GPU_IRQ2CORE(0));
-    cprintf("irq_init: success at CPU %d.\n", cpuid());
+    cprintf("irq_init: success.\n");
 }
 
 void

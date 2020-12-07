@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 
+#include "arm.h"
 #include "console.h"
 #include "kalloc.h"
 #include "memlayout.h"
@@ -149,5 +150,9 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 void
 uvm_switch(struct proc* p)
 {
-    /* TODO: Your code here. */
+    if (!p) panic("uvm_switch: no process.\n");
+    if (!p->kstack) panic("uvm_switch: no kstack.\n");
+    if (!p->pgdir) panic("uvm_switch: no pgdir.\n");
+
+    lttbr0(V2P(p->pgdir));  // Switch to process's address space
 }

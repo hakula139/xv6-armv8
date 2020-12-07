@@ -1,5 +1,6 @@
 #include "proc.h"
 
+#include "arm.h"
 #include "console.h"
 #include "kalloc.h"
 #include "mmu.h"
@@ -105,8 +106,7 @@ proc_alloc()
             return NULL;
         }
 
-        // Set up new context to start executing at forkret,
-        // which returns to user space.
+        // Set up new context to start executing at forkret.
         sp -= sizeof(*p->context);
         p->context = (struct context*)sp;
         memset(p->context, 0, sizeof(*p->context));
@@ -128,9 +128,6 @@ proc_alloc()
 void
 user_init()
 {
-    /* For why our symbols differ from xv6, please refer to
-     * https://stackoverflow.com/questions/10486116/what-does-this-gcc-error-relocation-truncated-to-fit-mean
-     */
     extern char _binary_obj_user_initcode_start[];
     extern char _binary_obj_user_initcode_size[];
 
@@ -153,7 +150,7 @@ user_init()
     p->tf->x30 = 0;          // initcode start address
     p->tf->sp_el0 = PGSIZE;  // user stack pointer
 
-    strncpy(p->name, "initcode", sizeof(p->name));
+    strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
     release(&p->lock);
 
@@ -163,51 +160,114 @@ user_init()
 /*
  * Per-CPU process scheduler
  * Each CPU calls scheduler() after setting itself up.
- * Scheduler never returns.  It loops, doing:
+ * Scheduler never returns. It loops, doing:
  *  - choose a process to run
  *  - swtch to start running that process
  *  - eventually that process transfers control
- *        via swtch back to the scheduler.
+ *    via swtch back to the scheduler.
  */
 void
 scheduler()
 {
-    struct proc* p;
     struct cpu* c = thiscpu;
     c->proc = NULL;
 
-    for (;;) {
-        /* Loop over process table looking for process to run. */
-        /* TODO: Your code here. */
+    while (1) {
+        // Enable interrupts on this processor to avoid deadlock.
+        sti();
+
+        // Loop over process table looking for process to run.
+        for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+            acquire(&p->lock);
+            if (p->state != RUNNABLE) {
+                release(&p->lock);
+                continue;
+            }
+
+            // Switch to chosen process. It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            c->proc = p;
+            uvm_switch(p);
+            p->state = RUNNING;
+            cprintf(
+                "scheduler: switch to proc %d at CPU %d.\n", p->pid, cpuid());
+
+            swtch(&c->scheduler, p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = NULL;
+            release(&p->lock);
+        }
     }
 }
 
 /*
- * Enter scheduler.  Must hold only ptable.lock
+ * Enter scheduler. Must hold only p->lock
+ * and have changed p->state.
  */
 void
 sched()
 {
-    /* TODO: Your code here. */
+    struct cpu* c = thiscpu;
+    struct proc* p = c->proc;
+
+    if (!holding(&p->lock)) panic("sched: process not locked.\n");
+    if (p->state == RUNNING) panic("sched: process running.\n");
+
+    swtch(&p->context, c->scheduler);
 }
 
 /*
- * A fork child will first swtch here, and then "return" to user space.
+ * A fork child's very first scheduling by scheduler()
+ * will swtch to forkret. "Return" to user space.
  */
 void
 forkret()
 {
-    /* TODO: Your code here. */
+    struct proc* p = thiscpu->proc;
+
+    // Still holding p->lock from scheduler.
+    release(&p->lock);
 }
 
 /*
- * Exit the current process.  Does not return.
+ * Pass p's abandoned children to initproc.
+ * Caller must hold wait_lock.
+ */
+void
+reparent(struct proc* p)
+{
+    for (struct proc* pc = ptable.proc; pc < &ptable.proc[NPROC]; ++pc) {
+        if (pc->parent == p) { pc->parent = initproc; }
+    }
+}
+
+/*
+ * Exit the current process. Does not return.
  * An exited process remains in the zombie state
  * until its parent calls wait() to find out it exited.
  */
 void
-exit()
+exit(int status)
 {
     struct proc* p = thiscpu->proc;
-    /* TODO: Your code here. */
+    if (p == initproc) panic("exit: initproc exiting.\n");
+
+    acquire(&wait_lock);
+
+    // Give any children to init.
+    reparent(p);
+
+    acquire(&p->lock);
+    p->xstate = status;
+    p->state = ZOMBIE;
+
+    release(&wait_lock);
+
+    // Jump into the scheduler, never return.
+    sched();
+
+    panic("exit: zombie returned!\n");
 }

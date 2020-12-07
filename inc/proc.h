@@ -66,6 +66,6 @@ void proc_init();
 void user_init();
 void scheduler();
 
-void exit();
+void exit(int);
 
 #endif  // INC_PROC_H_

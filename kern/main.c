@@ -32,11 +32,9 @@ main()
         while (!started) {}
         cprintf("main: [CPU %d] init started.\n", cpuid());
         lvbar(vectors);
-        irq_init();
     }
 
     cprintf("main: [CPU %d] init success.\n", cpuid());
 
-    // scheduler();
-    while (1) {}
+    scheduler();
 }
