@@ -54,7 +54,7 @@ fetchstr(uint64_t addr, char** pp)
 int
 argint(int n, uint64_t* ip)
 {
-    if (n > 3) panic("argint: too many system call parameters.\n");
+    if (n > 3) panic("\targint: too many system call parameters.\n");
 
     struct proc* proc = thiscpu->proc;
 
@@ -117,7 +117,7 @@ syscall()
     } else {
         p->tf->x30 = 0;
         panic(
-            "syscall: unknown syscall %d from proc %d (%s) at CPU %d.\n", num,
+            "\tsyscall: unknown syscall %d from proc %d (%s) at CPU %d.\n", num,
             p->pid, p->name, cpuid());
     }
     return 0;

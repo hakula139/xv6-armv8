@@ -39,7 +39,7 @@ kfree(char* v)
     struct run* r;
 
     if ((uint64_t)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
-        panic("kfree: invalid address: 0x%p\n", V2P(v));
+        panic("\tkfree: invalid address: 0x%p\n", V2P(v));
 
     /* Fill with junk to catch dangling refs. */
     memset(v, 1, PGSIZE);
@@ -79,7 +79,7 @@ void
 check_free_list()
 {
     struct run* p;
-    if (!kmem.free_list) panic("check_free_list: free_list is null.\n");
+    if (!kmem.free_list) panic("\tcheck_free_list: free_list is null.\n");
 
     for (p = kmem.free_list; p; p = p->next) { assert((void*)p > (void*)end); }
     cprintf("check_free_list: passed.\n");

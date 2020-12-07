@@ -83,7 +83,7 @@ void
 vm_free(uint64_t* pgdir, int level)
 {
     if (!pgdir || level < 0) return;
-    if (PTE_FLAGS(pgdir)) panic("vm_free: invalid pgdir.\n");
+    if (PTE_FLAGS(pgdir)) panic("\tvm_free: invalid pgdir.\n");
     if (!level) {
         kfree((char*)pgdir);
         return;
@@ -109,7 +109,7 @@ check_map_region()
     if (*((uint64_t*)0x1000) == 0xac) {
         cprintf("check_map_region: passed.\n");
     } else {
-        panic("check_map_region: failed.\n");
+        panic("\tcheck_map_region: failed.\n");
     }
 
     vm_free((uint64_t*)p, 4);
@@ -136,8 +136,8 @@ void
 uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 {
     char* mem;
-    if (sz >= PGSIZE) panic("uvm_init: sz must be less than a page.\n");
-    if (!(mem = kalloc())) panic("uvm_init: not enough memory.\n");
+    if (sz >= PGSIZE) panic("\tuvm_init: sz must be less than a page.\n");
+    if (!(mem = kalloc())) panic("\tuvm_init: not enough memory.\n");
     memset(mem, 0, PGSIZE);
     map_region(
         pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
@@ -150,9 +150,9 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 void
 uvm_switch(struct proc* p)
 {
-    if (!p) panic("uvm_switch: no process.\n");
-    if (!p->kstack) panic("uvm_switch: no kstack.\n");
-    if (!p->pgdir) panic("uvm_switch: no pgdir.\n");
+    if (!p) panic("\tuvm_switch: no process.\n");
+    if (!p->kstack) panic("\tuvm_switch: no kstack.\n");
+    if (!p->pgdir) panic("\tuvm_switch: no pgdir.\n");
 
     lttbr0(V2P(p->pgdir));  // Switch to process's address space
 }

@@ -48,7 +48,7 @@ kfree(char* v)
     struct run* r;
 
     if ((uint64_t)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
-        panic("kfree: invalid address: 0x%p\n", V2P(v));
+        panic("\tkfree: invalid address: 0x%p\n", V2P(v));
 
     /* Fill with junk to catch dangling refs. */
     memset(v, 1, PGSIZE);
@@ -140,7 +140,7 @@ void
 vm_free(uint64_t* pgdir, int level)
 {
     if (!pgdir || level < 0) return;
-    if (PTE_FLAGS(pgdir)) panic("vm_free: invalid pgdir.\n");
+    if (PTE_FLAGS(pgdir)) panic("\tvm_free: invalid pgdir.\n");
     if (!level) {
         kfree((char*)pgdir);
         return;

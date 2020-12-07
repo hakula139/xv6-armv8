@@ -49,11 +49,11 @@ trap(struct trapframe* tf)
         default: bad = 1;
         }
     }
-    if (bad) panic("trap: unexpected irq.\n");
+    if (bad) panic("\ttrap: unexpected irq.\n");
 }
 
 void
 irq_error(uint64_t type)
 {
-    panic("irq_error: irq of type %d unimplemented.\n", type);
+    panic("\tirq_error: irq of type %d unimplemented.\n", type);
 }

@@ -132,12 +132,12 @@ user_init()
     extern char _binary_obj_user_initcode_size[];
 
     struct proc* p = proc_alloc();
-    if (!p) panic("user_init: process failed to allocate.\n");
+    if (!p) panic("\tuser_init: process failed to allocate.\n");
     initproc = p;
 
     // Allocate a user page table.
     if (!(p->pgdir = pgdir_init()))
-        panic("user_init: page table failed to allocate.\n");
+        panic("\tuser_init: page table failed to allocate.\n");
     p->sz = PGSIZE;
 
     // Copy initcode into the page table.
@@ -213,8 +213,8 @@ sched()
     struct cpu* c = thiscpu;
     struct proc* p = c->proc;
 
-    if (!holding(&p->lock)) panic("sched: process not locked.\n");
-    if (p->state == RUNNING) panic("sched: process running.\n");
+    if (!holding(&p->lock)) panic("\tsched: process not locked.\n");
+    if (p->state == RUNNING) panic("\tsched: process running.\n");
 
     swtch(&p->context, c->scheduler);
 }
@@ -269,7 +269,7 @@ void
 exit(int status)
 {
     struct proc* p = thiscpu->proc;
-    if (p == initproc) panic("exit: initproc exiting.\n");
+    if (p == initproc) panic("\texit: initproc exiting.\n");
 
     acquire(&wait_lock);
 
@@ -285,5 +285,5 @@ exit(int status)
     // Jump into the scheduler, never return.
     sched();
 
-    panic("exit: zombie returned!\n");
+    panic("\texit: zombie returned!\n");
 }

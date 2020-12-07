@@ -300,12 +300,12 @@ user_init()
     extern char _binary_obj_user_initcode_size[];
 
     struct proc* p = proc_alloc();
-    if (!p) panic("user_init: process failed to allocate.\n");
+    if (!p) panic("\tuser_init: process failed to allocate.\n");
     initproc = p;
 
     // Allocate a user page table.
     if (!(p->pgdir = pgdir_init()))
-        panic("user_init: page table failed to allocate.\n");
+        panic("\tuser_init: page table failed to allocate.\n");
     p->sz = PGSIZE;
 
     // Copy initcode into the page table.
@@ -355,8 +355,8 @@ void
 uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 {
     char* mem;
-    if (sz >= PGSIZE) panic("uvm_init: sz must be less than a page.\n");
-    if (!(mem = kalloc())) panic("uvm_init: not enough memory.\n");
+    if (sz >= PGSIZE) panic("\tuvm_init: sz must be less than a page.\n");
+    if (!(mem = kalloc())) panic("\tuvm_init: not enough memory.\n");
     memset(mem, 0, PGSIZE);
     map_region(
         pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
