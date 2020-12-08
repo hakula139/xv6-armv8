@@ -86,7 +86,7 @@
 
 - 宏由全大写和下划线组成，除了：
 
-  `assert`, `panic`, `static_assert`, `offsetof`, `container_of`
+  `assert`, `panic`, `static_assert`, `offset_of`, `container_of`
 
 - 函数和变量名均为小写，单词之间用下划线连接
 

@@ -1,5 +1,5 @@
-#ifndef INC_PERIPHERALS_MINI_UART_H
-#define INC_PERIPHERALS_MINI_UART_H
+#ifndef INC_PERIPHERALS_MINI_UART_H_
+#define INC_PERIPHERALS_MINI_UART_H_
 
 #include "peripherals/base.h"
 
@@ -16,4 +16,4 @@
 #define AUX_MU_STAT_REG (MMIO_BASE + 0x00215064)
 #define AUX_MU_BAUD_REG (MMIO_BASE + 0x00215068)
 
-#endif
+#endif  // INC_PERIPHERALS_MINI_UART_H_

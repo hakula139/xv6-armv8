@@ -1,5 +1,5 @@
-#ifndef INC_PERIPHERALS_GPIO_H
-#define INC_PERIPHERALS_GPIO_H
+#ifndef INC_PERIPHERALS_GPIO_H_
+#define INC_PERIPHERALS_GPIO_H_
 
 #include "peripherals/base.h"
 
@@ -24,4 +24,4 @@
 #define GPPUDCLK0       (GPIO_BASE + 0x98)
 #define GPPUDCLK1       (GPIO_BASE + 0x9C)
 
-#endif
+#endif  // INC_PERIPHERALS_GPIO_H_

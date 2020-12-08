@@ -27,5 +27,5 @@ clock_reset()
 void
 clock()
 {
-    cprintf("cpu %d clock.\n", cpuid());
+    cprintf("clock: CPU %d clock.\n", cpuid());
 }

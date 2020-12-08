@@ -27,8 +27,9 @@ struct {
 void
 alloc_init()
 {
-    kmem.lock.locked = 0; /* Init kmem lock */
+    initlock(&kmem.lock, "kmem_lock"); /* Init kmem lock */
     free_range(end, P2V(PHYSTOP));
+    cprintf("alloc_init: success.\n");
 }
 
 /* Free the page of physical memory pointed at by v. */
@@ -38,7 +39,7 @@ kfree(char* v)
     struct run* r;
 
     if ((uint64_t)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
-        panic("kfree: invalid address: 0x%p\n", V2P(v));
+        panic("\tkfree: invalid address: 0x%p\n", V2P(v));
 
     /* Fill with junk to catch dangling refs. */
     memset(v, 1, PGSIZE);
@@ -78,9 +79,8 @@ void
 check_free_list()
 {
     struct run* p;
-    if (!kmem.free_list)
-        panic("check_free_list: 'kmem.free_list' is a null pointer!");
+    if (!kmem.free_list) panic("\tcheck_free_list: free_list is null.\n");
 
     for (p = kmem.free_list; p; p = p->next) { assert((void*)p > (void*)end); }
-    cprintf("check_free_list: passed!\n");
+    cprintf("check_free_list: passed.\n");
 }
