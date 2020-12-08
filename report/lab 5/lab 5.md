@@ -565,6 +565,8 @@ usertrapret:
 
 终于，我们跳转到了函数 `trapret`，其作用主要是载入 trapframe，初始化所有寄存器。1.4.4 节中我们提到，寄存器 X30 和 ELR_EL1 设置为 `0`，其实指的是 `initcode` 在页表中的起始地址；寄存器 SP_EL0 设置为 `PGSIZE`，指的是用户栈的栈底地址，作为栈指针 SP 的初始值；寄存器 SPSR_EL1 设置为 `0`，表示用户态（EL0）。于是，`trapret` 在异常返回（`eret`）时，将返回到用户态下 `initcode` 的起始地址。至此，用户程序 `initcode` 开始执行。
 
+##### 1.4.6 进程切换：`yield`
+
 每当时间片耗尽，程序就要被强制暂停执行。这时我们通过 trap 调用函数 `yield` 来切换当前使用 CPU 的程序。trap 的部分我们放在 2.1 节再讲，这里我们只关注进程管理的部分。
 
 函数 `yield` 的工作很简单，就是设置进程状态为 RUNNABLE，然后调用函数 `sched`。
@@ -609,6 +611,8 @@ sched()
 }
 ```
 
+##### 1.4.7 进程退出：`exit`
+
 假设程序已经执行完了，最后系统函数 `sys_exit` 会调用函数 `exit` 退出。函数 `exit` 的主要工作是将当前进程的子进程托管给第一个用户进程 `initproc`，设置进程状态为 ZOMBIE，最后调用函数 `sched` 回到 `scheduler`。由于目前我们没有实现函数 `wait`，因此其实进程申请的资源暂时还无法释放，父子进程的概念暂时也没有什么用处，可以先不管。
 
 需要注意的是，暂时我们为了省事，是直接在 `initproc` 里执行的用户程序代码。但显然我们并不应该这么做，因为这样在程序退出时，也就把这第一个用户程序 `initproc` 给退出了，这样其实之后就无法利用 `initproc` 启动新程序了。未来我们实现了文件系统和其他一些必要的函数（如 `fork`, `sleep`, `wait`），真正开始执行用户程序后，这里需要将第 14 行取消注释。
@@ -651,6 +655,152 @@ exit(int status)
 #### 2.1 系统调用模块
 
 > 目前内核已经支持基本的异常处理，在本实验中还需要进一步完善内核的系统调用模块。
+
+从函数 `trap` 开始说起。在 trap 后，如果判断当前为 timer 中断，则调用函数 `yield`，触发进程切换，具体参见 1.4.6 节。如果判断当前为系统调用，则清空寄存器 ESR (Exception Syndrome Register)，设置 trapframe，并调用函数 `syscall`。
+
+```c {.line-numbers}
+// kern/trap.c
+
+void
+trap(struct trapframe* tf)
+{
+    struct proc* p = thiscpu->proc;
+    int src = get32(IRQ_SRC_CORE(cpuid()));
+    int bad = 0;
+
+    if (src & IRQ_CNTPNSIRQ) {
+        timer(), timer_reset(), yield();
+    } else if (src & IRQ_TIMER) {
+        clock(), clock_reset();
+    } else if (src & IRQ_GPU) {
+        if (get32(IRQ_PENDING_1) & AUX_INT)
+            uart_intr();
+        else
+            bad = 1;
+    } else {
+        switch (resr() >> EC_SHIFT) {
+        case EC_SVC64:
+            lesr(0); /* Clear esr. */
+            /* Jump to syscall to handle the system call from user process */
+            if (p->killed) exit(1);
+            p->tf = tf;
+            syscall();
+            if (p->killed) exit(1);
+            break;
+        default: bad = 1;
+        }
+    }
+    if (bad) panic("\ttrap: unexpected irq.\n");
+}
+```
+
+函数 `syscall` 根据传入的第一个参数（即寄存器 X0 的值），也就是 system call number 决定跳转到哪个系统函数。这里我们仿照 Xv6 [^3]，采用了一个函数指针数组 `syscalls` 作为路由。
+
+```c {.line-numbers}
+// inc/syscallno.h
+
+#define SYS_exec 0
+#define SYS_exit 1
+```
+
+```c {.line-numbers}
+// kern/syscall.c
+
+extern int sys_exec();
+extern int sys_exit();
+
+static int (*syscalls[])() = {
+    [SYS_exec] sys_exec,
+    [SYS_exit] sys_exit,
+};
+
+int
+syscall()
+{
+    struct proc* p = thiscpu->proc;
+    int num = p->tf->x0;
+    if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
+        cprintf("syscall: proc %d calls syscall %d.\n", p->pid, num);
+        return syscalls[num]();
+    } else {
+        cprintf(
+            "syscall: unknown syscall %d from proc %d (%s).\n", num, p->pid,
+            p->name);
+        return -1;
+    }
+    return 0;
+}
+```
+
+### 3. 调整主循环
+
+由于 1.4.4 节中踩到的坑，我仔细检查了一遍哪些初始化函数是只能在 CPU0 上被调用一次的。目前的函数 `main` 如下所示：
+
+```c {.line-numbers}
+// kern/main.c
+
+volatile static int started = 0;
+
+void
+main()
+{
+    extern char edata[], end[], vectors[];
+
+    if (cpuid() == 0) {
+        memset(edata, 0, end - edata);
+        console_init();
+        cprintf("main: [CPU 0] init started.\n");
+        alloc_init();
+        proc_init();
+        lvbar(vectors);
+        irq_init();
+        timer_init();
+        user_init();
+        started = 1;  // allow APs to run
+    } else {
+        while (!started) {}
+        cprintf("main: [CPU %d] init started.\n", cpuid());
+        lvbar(vectors);
+        timer_init();
+    }
+
+    cprintf("main: [CPU %d] init success.\n", cpuid());
+
+    scheduler();
+}
+```
+
+## 运行结果
+
+```bash
+> make qemu
+```
+
+```text
+console_init: success.
+main: [CPU 0] init started.
+alloc_init: success.
+proc_init: success.
+irq_init: success.
+timer_init: success at CPU 0.
+proc_alloc: proc 1 success.
+user_init: proc 1 (initproc) success.
+main: [CPU 0] init success.
+main: [CPU 3] init started.
+main: [CPU 2] init started.
+timer_init: success at CPU 3.
+main: [CPU 1] init started.
+main: [CPU 3] init success.
+timer_init: success at CPU 2.
+main: [CPU 2] init success.
+scheduler: switch to proc 1 at CPU 0.
+timer_init: success at CPU 1.
+main: [CPU 1] init success.
+syscall: proc 1 calls syscall 0.
+sys_exec: executing /init with parameters: /init 
+syscall: proc 1 calls syscall 1.
+sys_exit: in exit.
+```
 
 ## 测试环境
 
