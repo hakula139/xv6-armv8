@@ -317,6 +317,8 @@ user_init()
     memset(p->tf, 0, sizeof(*p->tf));
     p->tf->x30 = 0;          // initcode start address
     p->tf->sp_el0 = PGSIZE;  // user stack pointer
+    p->tf->spsr_el1 = 0;     // program status register
+    p->tf->elr_el1 = 0;      // exception link register
 
     strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
