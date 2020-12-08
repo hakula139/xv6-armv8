@@ -74,7 +74,7 @@ struct trapframe {
 
 将所有通用寄存器和 3 个特殊寄存器 ELR_EL1、SPSR_EL1、SP_EL0 压入堆栈，然后跳转到中断函数 `trap` 入口。
 
-```assembly {.line-number}
+```armasm {.line-number}
 # kern/trapasm.S
 
 /* vectors.S sends all traps here. */
@@ -112,7 +112,7 @@ alltraps:
 
 将所有通用寄存器和 3 个特殊寄存器 ELR_EL1、SPSR_EL1、SP_EL0 弹出堆栈还原，然后中断返回（`eret`）。
 
-```assembly {.line-number}
+```armasm {.line-number}
 # kern/trapasm.S
 
 /* Return falls through to trapret. */
