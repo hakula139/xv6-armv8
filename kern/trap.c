@@ -29,7 +29,7 @@ trap(struct trapframe* tf)
     int bad = 0;
 
     if (src & IRQ_CNTPNSIRQ) {
-        timer(), timer_reset();
+        timer(), timer_reset(), yield();
     } else if (src & IRQ_TIMER) {
         clock(), clock_reset();
     } else if (src & IRQ_GPU) {

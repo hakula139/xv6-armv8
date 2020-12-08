@@ -172,9 +172,6 @@ scheduler()
     c->proc = NULL;
 
     while (1) {
-        // Enable interrupts on this processor to avoid deadlock.
-        sti();
-
         // Loop over process table looking for process to run.
         for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
             acquire(&p->lock);
@@ -269,7 +266,9 @@ void
 exit(int status)
 {
     struct proc* p = thiscpu->proc;
-    if (p == initproc) panic("\texit: initproc exiting.\n");
+
+    // Temporarily disabled before user processes are implemented.
+    // if (p == initproc) panic("\texit: initproc exiting.\n");
 
     acquire(&wait_lock);
 

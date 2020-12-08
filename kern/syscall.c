@@ -113,7 +113,7 @@ syscall()
     struct proc* p = thiscpu->proc;
     int num = p->tf->x0;
     if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
-        cprintf("syscall: proc %d calls %d.\n", p->pid, num);
+        cprintf("syscall: proc %d calls syscall %d.\n", p->pid, num);
         return syscalls[num]();
     } else {
         cprintf(
