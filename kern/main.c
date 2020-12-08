@@ -1,7 +1,9 @@
 #include <stdint.h>
 
 #include "console.h"
+#include "kalloc.h"
 #include "string.h"
+#include "vm.h"
 
 void
 main()
@@ -12,10 +14,12 @@ main()
      */
 
     extern char edata[], end[];
+
     memset(edata, 0, end - edata);
-
     console_init();
-    cprintf("hello, world\n");
-
+    alloc_init();
+    cprintf("Allocator: Init success.\n");
+    check_map_region();
+    check_free_list();
     while (1) {}
 }

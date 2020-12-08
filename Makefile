@@ -22,11 +22,18 @@ OBJCOPY := $(CROSS)-objcopy
 # -MMD -MP:
 #     generate .d files
 
-CFLAGS := -Wall -g -O2 \
+CFLAGS := -Wall -g \
           -fno-pie -fno-pic -fno-stack-protector \
+          -fno-zero-initialized-in-bss \
           -static -fno-builtin -nostdlib -ffreestanding -nostartfiles \
           -mgeneral-regs-only \
-	      -MMD -MP
+          -MMD -MP
+
+V := @
+# Run 'make V=1' to turn on verbose commands
+ifeq ($(V),1)
+override V =
+endif
 
 CFLAGS += -Iinc
 SRC_DIRS := kern
@@ -34,6 +41,8 @@ BUILD_DIR = obj
 
 KERN_ELF := $(BUILD_DIR)/kernel8.elf
 KERN_IMG := $(BUILD_DIR)/kernel8.img
+
+.PHONY: all clean
 
 all: $(KERN_IMG)
 
@@ -44,29 +53,36 @@ DEPS := $(OBJS:.o=.d)
 -include $(DEPS)
 
 $(BUILD_DIR)/%.c.o: %.c
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	@echo + cc $<
+	@mkdir -p $(dir $@)
+	$(V)$(CC) $(CFLAGS) -c -o $@ $<
+	
 $(BUILD_DIR)/%.S.o: %.S
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	@echo + as $<
+	@mkdir -p $(dir $@)
+	$(V)$(CC) $(CFLAGS) -c -o $@ $<
 
 $(KERN_ELF): kern/linker.ld $(OBJS)
-	$(LD) -o $@ -T $< $(OBJS)
-	$(OBJDUMP) -S -D $@ > $(basename $@).asm
-	$(OBJDUMP) -x $@ > $(basename $@).hdr
+	@echo + ld $@
+	$(V)$(LD) -o $@ -T $< $(OBJS)
+	@echo + objdump $@
+	$(V)$(OBJDUMP) -S -d $@ > $(basename $@).asm
+	$(V)$(OBJDUMP) -x $@ > $(basename $@).hdr
 
 $(KERN_IMG): $(KERN_ELF)
-	$(OBJCOPY) -O binary $< $@
+	@echo + objcopy $@
+	$(V)$(OBJCOPY) -O binary $< $@
 
-QEMU := qemu-system-aarch64 -M raspi3 -nographic -serial null -chardev stdio,id=uart1 -serial chardev:uart1 -monitor none
+QEMU := qemu-system-aarch64 -M raspi3 -nographic -serial null -serial mon:stdio
 
 qemu: $(KERN_IMG) 
 	$(QEMU) -kernel $<
+
 qemu-gdb: $(KERN_IMG)
 	$(QEMU) -kernel $< -S -gdb tcp::1234
-gdb: 
-	gdb-multiarch -n -x .gdbinit
 
-.PHONY: clean
+gdb: 
+	gdb-multiarch -x .gdbinit
+
 clean:
 	rm -r $(BUILD_DIR)
