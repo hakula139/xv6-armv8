@@ -18,12 +18,19 @@
 
 本操作系统中，Trap frame 包含 31 个通用寄存器和 3 个特殊寄存器 SP_EL0, SPSR_EL1, ELR_EL1。
 
-为什么要保存所有通用寄存器，而不是仅 callee-saved 或 caller-saved 寄存器？因为这是操作系统内核中断，而不是普通用户态的函数调用，CPU 需要充分保障程序数据安全，callee-saved 和 caller-saved 只是君子协定。
+为什么要保存所有通用寄存器，而不是仅 callee-saved 或 caller-saved 寄存器？因为这是操作系统内核中断，而不是普通用户态的函数调用，不需要遵守函数调用的规范。
 
 为什么要保存这 3 个特殊寄存器？因为中断返回（`eret`）时需要还原中断前 PSTATE（保存在 SPSR_EL1）、中断前 PC（保存在 ELR_EL1），以及还原用户态栈指针 SP（保存在 SP_EL0）。[^1]
 
 ```c {.line-number}
+// inc/trap.h
+
 struct trapframe {
+    // Special Registers
+    uint64_t sp_el0;    // Stack Pointer
+    uint64_t spsr_el1;  // Program Status Register
+    uint64_t elr_el1;   // Exception Link Register
+
     // General-Purpose Registers
     uint64_t x0;
     uint64_t x1;
@@ -56,11 +63,6 @@ struct trapframe {
     uint64_t x28;
     uint64_t x29;  // Frame Pointer
     uint64_t x30;  // Procedure Link Register
-
-    // Special Registers
-    uint64_t sp_el0;    // Stack Pointer
-    uint64_t spsr_el1;  // Program Status Register
-    uint64_t elr_el1;   // Exception Link Register
 };
 ```
 
@@ -75,11 +77,10 @@ struct trapframe {
 ```assembly {.line-number}
 # kern/trapasm.S
 
-/* vectors.S send all traps here. */
+/* vectors.S sends all traps here. */
 .global alltraps
 alltraps:
-    /* Build your trap frame. */
-
+    /* Build trapframe. */
     stp x29, x30, [sp, #-16]!
     stp x27, x28, [sp, #-16]!
     stp x25, x26, [sp, #-16]!
@@ -102,8 +103,7 @@ alltraps:
     stp x3, x0, [sp, #-16]!
     stp x1, x2, [sp, #-16]!
 
-    /* Call trap(struct *trapframe). */
-
+    /* Call trap(struct trapframe*). */
     add x0, sp, #0
     bl  trap
 ```
@@ -119,7 +119,6 @@ alltraps:
 .global trapret
 trapret:
     /* Restore registers. */
-
     ldp x1, x2, [sp], #16
     ldp x3, x0, [sp], #16
     msr sp_el0, x1

@@ -4,6 +4,11 @@
 #include <stdint.h>
 
 struct trapframe {
+    // Special Registers
+    uint64_t sp_el0;    // Stack Pointer
+    uint64_t spsr_el1;  // Program Status Register
+    uint64_t elr_el1;   // Exception Link Register
+
     // General-Purpose Registers
     uint64_t x0;
     uint64_t x1;
@@ -36,11 +41,6 @@ struct trapframe {
     uint64_t x28;
     uint64_t x29;  // Frame Pointer
     uint64_t x30;  // Procedure Link Register
-
-    // Special Registers
-    uint64_t sp_el0;    // Stack Pointer
-    uint64_t spsr_el1;  // Program Status Register
-    uint64_t elr_el1;   // Exception Link Register
 };
 
 void trap(struct trapframe*);
