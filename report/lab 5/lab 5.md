@@ -28,7 +28,7 @@ context 的实例存在执行 context switch 的内核所对应的 kernel stack 
 
 context 中需要保存所有的 callee-saved 寄存器 [^1]，根据 ARM 开发文档 [^2]，即通用寄存器 X19 ~ X28。此外，我们额外保存寄存器 X29 (Frame Pointer) 和 X30 (Procedure Link Register)，其中 X30 用于指定用户进程初次运行的地址。
 
-```c {.line-number}
+```c {.line-numbers}
 // inc/proc.h
 
 struct context {
@@ -58,7 +58,7 @@ context switch 主要做了以下几件事情 [^3]：
 3. 将 `new`（即函数调用传入的第二个参数，位于寄存器 X1）的值覆盖当前栈指针的地址，切换到（将被调入的）新进程的 context
 4. 将新进程的 callee-saved 寄存器弹栈，函数 `swtch` 返回（`ret`，等价于 `mov pc, x30`）
 
-```assembly {.line-number}
+```armasm {.line-numbers}
 # kern/swtch.S
 
 /*
@@ -74,6 +74,7 @@ context switch 主要做了以下几件事情 [^3]：
 
 swtch:
     # Save old callee-saved registers
+    stp x29, x30, [sp, #-16]!
     stp x27, x28, [sp, #-16]!
     stp x25, x26, [sp, #-16]!
     stp x23, x24, [sp, #-16]!
@@ -91,6 +92,7 @@ swtch:
     ldp x23, x24, [sp], #16
     ldp x25, x26, [sp], #16
     ldp x27, x28, [sp], #16
+    ldp x29, x30, [sp], #16
 
     ret
 ```
@@ -129,7 +131,7 @@ swtch:
 
 每个用户进程的 PCB 中保存了以下数据，具体作用参见注释 [^4]：
 
-```c {.line-number}
+```c {.line-numbers}
 // inc/proc.h
 
 struct proc {
@@ -159,9 +161,9 @@ struct proc {
 
 函数 `proc_init` 的主要工作是完成 `ptable` 锁的初始化，以处理多核的并发问题。这里我们不是在整个 `struct ptable` 中，而是选择在每个 `struct proc` 中新增一个自旋锁 `proc_lock`。这样做的目的是为了使锁的控制粒度更细，实际上这也是 Xv6 for RISC-V [^4] 的实现方法。
 
-在获取进程 `pid` 时，同样也存在并发问题，因此这里也为 `pid` 新增了一个自旋锁 `pid_lock`。自旋锁 `wait_lock` 则是为了确保父进程在子进程返回前维持等待状态，防止子进程在访问父进程 `p->parent` 时发现父进程已丢失。
+在获取进程 `pid` 时，同样也存在并发问题，因此这里也为 `pid` 新增了一个自旋锁 `pid_lock`。自旋锁 `wait_lock` 则是为了确保父进程在子进程返回前维持等待状态，防止子进程 `p` 在访问父进程 `p->parent` 时发现父进程已丢失。
 
-```c {.line-number}
+```c {.line-numbers}
 // kern/proc.c
 
 /*
@@ -185,13 +187,13 @@ proc_init()
 
 1. 利用函数 `pid_next` (`kern/proc.c`) 分配 PID
 2. 利用函数 `kalloc` (`kern/kalloc.c`) 分配内核栈 kstack
-3. 利用函数 `kalloc` 为内核态下的 trapframe 分配一个页
-4. 在 kstack 的栈顶分配一块空间作为 context，并进行初始化；其中寄存器 X30 保存函数 `forkret` 的地址，作为进程初次返回用户态时的启动地址
+3. 在 kstack 的栈顶分配一块空间作为 trapframe
+4. 在 trapframe 下面再分配一块空间作为 context，并进行初始化；其中寄存器 X30 保存函数 `forkret` 的地址，作为进程初次从函数 `swtch` 返回时的返回地址；这里函数 `forkret` 只需在进程第一次被 `scheduler` 调度时进入一次，之后就不再需要进入了，关于调度时所有函数调用的过程还会在 1.4.5 节细讲
 5. 设置进程状态为 EMBRYO
 
 如果创建进程失败，则返回 `NULL`。
 
-```c {.line-number}
+```c {.line-numbers}
 // kern/proc.c
 
 /*
@@ -220,12 +222,9 @@ proc_alloc()
         }
         char* sp = p->kstack + KSTACKSIZE;
 
-        // Allocate a trapframe page.
-        if (!(p->tf = (struct trapframe*)kalloc())) {
-            proc_free(p);
-            release(&p->lock);
-            return NULL;
-        }
+        // Leave room for trapframe.
+        sp -= sizeof(*p->tf);
+        p->tf = (struct trapframe*)sp;
 
         // Set up new context to start executing at forkret.
         sp -= sizeof(*p->context);
@@ -243,7 +242,7 @@ proc_alloc()
 
 其中，函数 `proc_free` 的作用是清空进程的 PCB，并利用函数 `kfree` 释放申请的内存。
 
-```c {.line-number}
+```c {.line-numbers}
 // kern/proc.c
 
 /*
@@ -264,7 +263,6 @@ proc_free(struct proc* p)
     p->sz = 0;
     if (p->pgdir) kfree((char*)p->pgdir);
     p->pgdir = NULL;
-    if (p->tf) kfree((char*)p->tf);
     p->tf = NULL;
     p->name[0] = '\0';
     p->state = UNUSED;
@@ -277,14 +275,14 @@ proc_free(struct proc* p)
 
 1. 利用函数 `proc_alloc` (`kern/proc.c`) 进行内核部分的初始化
 2. 利用函数 `pgdir_init` (`kern/vm.c`) 分配一个用户页表，并指定进程的内存空间为一个页表的大小 `PGSIZE`
-3. 利用函数 `uvm_init` (`kern/vm.c`) 将初始化二进制码 `initcode` 加载到页表的起始位置，进行页表初始化
-4. 清空 trapframe，并进行初始化；其中寄存器 X30 保存 `initcode` 在页表中的起始地址（即 `0x0`），寄存器 SP_EL0 保存用户栈的初始栈指针（即 `PGSIZE`）
+3. 利用函数 `uvm_init` (`kern/vm.c`) 将初始化二进制码 `initcode` 加载到页表的起始位置
+4. 清空 trapframe，并进行初始化；其中寄存器 SP_EL0 设置为 `PGSIZE`，其余寄存器设置为 `0`；部分寄存器会在函数 `trapret` 返回（`eret`）时用到，之后会在 1.4.5 节细讲
 5. 设置进程名为 `initproc`
 6. 设置进程状态为 RUNNABLE
 
-需要注意的是，函数 `user_init` 只需在 CPU0 中运行一次（在这个坑上我花了 3 个多小时调试 orz）。
+需要注意的是，函数 `user_init` 只需在 CPU0 中执行一次，而无需在其他 CPU 上执行（在这个坑上我花了 3 个多小时调试 orz）。
 
-```c {.line-number}
+```c {.line-numbers}
 // kern/proc.c
 
 /*
@@ -328,12 +326,14 @@ user_init()
 }
 ```
 
-其中，函数 `pgdir_init` 用于获取一个新页表，函数 `uvm_init` 用于将二进制码加载到页表。
+其中，函数 `pgdir_init` 用于获取一个新页表。
 
-```c {.line-number}
+```c {.line-numbers}
 // kern/vm.c
 
-/* Get a new page table */
+/*
+ * Get a new page table.
+ */
 uint64_t*
 pgdir_init()
 {
@@ -344,7 +344,9 @@ pgdir_init()
 }
 ```
 
-```c {.line-number}
+函数 `uvm_init` 则用于将二进制码加载到页表地址 `0x0` 的位置。
+
+```c {.line-numbers}
 // kern/vm.c
 
 /*
@@ -363,6 +365,284 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
     map_region(
         pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
     memmove((void*)mem, (const void*)binary, sz);
+}
+```
+
+##### 1.4.5 内核调度：`scheduler`
+
+函数 `scheduler` 的主要工作是调度进程，这就是个大工程了。以下我们按函数调用顺序慢慢展开。
+
+函数 `scheduler` 的主体部分如下：
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Per-CPU process scheduler
+ * Each CPU calls scheduler() after setting itself up.
+ * Scheduler never returns. It loops, doing:
+ *  - choose a process to run
+ *  - swtch to start running that process
+ *  - eventually that process transfers control
+ *    via swtch back to the scheduler.
+ */
+void
+scheduler()
+{
+    struct cpu* c = thiscpu;
+    c->proc = NULL;
+
+    while (1) {
+        // Loop over process table looking for process to run.
+        for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+            acquire(&p->lock);
+            if (p->state != RUNNABLE) {
+                release(&p->lock);
+                continue;
+            }
+
+            // Switch to chosen process. It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            c->proc = p;
+            uvm_switch(p);
+            p->state = RUNNING;
+            cprintf(
+                "scheduler: switch to proc %d at CPU %d.\n", p->pid, cpuid());
+
+            swtch(&c->scheduler, p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = NULL;
+            release(&p->lock);
+        }
+    }
+}
+```
+
+首先，`scheduler` 遍历进程表 `ptable`，找到一个 RUNNABLE 进程 `p`，然后利用函数 `uvm_switch` 切换到该进程的用户页表 `p->ptable`，并设置进程状态为 RUNNING。
+
+```c {.line-numbers}
+// kern/vm.c
+
+/*
+ * Switch to the process's own page table for execution of it.
+ */
+void
+uvm_switch(struct proc* p)
+{
+    if (!p) panic("\tuvm_switch: no process.\n");
+    if (!p->kstack) panic("\tuvm_switch: no kstack.\n");
+    if (!p->pgdir) panic("\tuvm_switch: no pgdir.\n");
+
+    lttbr0(V2P(p->pgdir));  // Switch to process's address space
+}
+```
+
+随后调用函数 `swtch`，切换到该进程的 context，参见 1.2.2 节。`swtch` 的返回地址由 `p->context` 保存的寄存器 X30 决定。1.4.3 节中我们提到，X30 保存的是函数 `forkret` 的地址，因此进程初次被 `scheduler` 调度，从函数 `swtch` 返回时，将返回到 `forkret`。此后，进程就按照每次切换 context 时 X30 保存的地址，返回到用户地址空间的相应位置即可。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * A fork child's very first scheduling by scheduler()
+ * will swtch to forkret. "Return" to user space.
+ */
+void
+forkret()
+{
+    struct proc* p = thiscpu->proc;
+
+    // Still holding p->lock from scheduler.
+    release(&p->lock);
+
+    // Pass trapframe pointer as an argument when calling trapret.
+    usertrapret(p->tf);
+}
+```
+
+函数 `forkret` 的作用是在进程初次被调度时，释放 `scheduler` 持有的进程锁 `p->lock`，并进行一些必须在用户进程中才能进行的初始化工作，例如文件系统的初始化（因为需要调用 `sleep` 休眠当前进程，故不能在函数 `main` 中执行）。由于目前我们还没有实现文件系统，因此目前 `forkret` 只是为这些初始化工作预留一下位置。
+
+接下来函数 `forkret` 应该返回到函数 `trapret`。这里一个非常 tricky 的点在于，如何返回？关于这点我研究了 7 个多小时，阅读了大量手册和源码。这项工作的难点在于，如果直接返回，那么由于 1.2.2 节我们设置的 context 中寄存器 X30 的值为函数 `forkret` 的地址，而且后续没有地方修改过，因此这里 `forkret` 还是会返回到 `forkret`，导致死循环。那如果直接调用 `trapret` 呢？由于当前栈指针 SP 保存的地址指向函数 `forkret` 目前栈帧的栈顶，显然不是进程 trapframe 的地址 `p->tf`。然而 `trapret` 在还原寄存器时需要用到 SP 的值，且该值应当为 `p->tf`，错误的 SP 值将导致 `trapret` 无法正常工作。
+
+```armasm {.line-numbers}
+# kern/trapasm.S
+
+/* Return falls through to trapret. */
+.global trapret
+trapret:
+    /* Restore registers. */
+    ldp x1, x2, [sp], #16
+    ldp x3, x0, [sp], #16
+    msr sp_el0, x1
+    msr spsr_el1, x2
+    msr elr_el1, x3
+
+    ldp x1, x2, [sp], #16
+    ldp x3, x4, [sp], #16
+    ldp x5, x6, [sp], #16
+    ldp x7, x8, [sp], #16
+    ldp x9, x10, [sp], #16
+    ldp x11, x12, [sp], #16
+    ldp x13, x14, [sp], #16
+    ldp x15, x16, [sp], #16
+    ldp x17, x18, [sp], #16
+    ldp x19, x20, [sp], #16
+    ldp x21, x22, [sp], #16
+    ldp x23, x24, [sp], #16
+    ldp x25, x26, [sp], #16
+    ldp x27, x28, [sp], #16
+    ldp x29, x30, [sp], #16
+
+    eret
+```
+
+由于 X86 下函数返回时要先弹栈，而此前栈底预先保存的值即为函数返回地址。因此 Xv6 [^3] 的解决方案是，在 kstack 中 context 部分的上方保存 `trapret` 的地址。由于之前函数是直接跳转到 `forkret` 的，而没有进行正常函数调用前必要的将函数返回地址压栈的操作。因此利用这个 trick，可以使得 `forkret` 返回时，弹栈得到的返回地址为 `trapret` 的地址，实现跳转。同时这样的好处是，弹栈后，位于返回地址上方的地址正好就是 `trapframe` 的地址，因此栈指针 SP 的值也是正确的，恰好指向 `p->tf`。
+
+```c {.line-numbers}
+// https://github.com/mit-pdos/xv6-public/blob/master/proc.c
+
+sp = p->kstack + KSTACKSIZE;
+
+// Leave room for trap frame.
+sp -= sizeof *p->tf;
+p->tf = (struct trapframe*)sp;
+
+// Set up new context to start executing at forkret,
+// which returns to trapret.
+sp -= 4;
+*(uint*)sp = (uint)trapret;
+
+sp -= sizeof *p->context;
+p->context = (struct context*)sp;
+memset(p->context, 0, sizeof *p->context);
+p->context->eip = (uint)forkret;
+```
+
+然而，ARM 下的函数返回机制与 X86 不同，是将寄存器 X30 的值作为返回地址，而没有这步弹栈操作。因此这个方案在 ARM 下不可行。
+
+Xv6 for RISC-V [^4] 的解决方案是，不采用 X86 下直接返回的方式，而是调用函数 `usertrapret`。在 `usertrapret` 的最后，这里其实是调用了函数 `userret`，有点类似于我们的 `trapret`。
+
+```c {.line-numbers}
+// https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/trap.c
+
+// jump to trampoline.S at the top of memory, which 
+// switches to the user page table, restores user registers,
+// and switches to user mode with sret.
+uint64 fn = TRAMPOLINE + (userret - trampoline);
+((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
+```
+
+```assembly {.line-numbers}
+# https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/trampoline.S
+
+.globl userret
+userret:
+        # userret(TRAPFRAME, pagetable)
+        # switch from kernel to user.
+        # usertrapret() calls here.
+        # a0: TRAPFRAME, in user page table.
+        # a1: user page table, for satp.
+```
+
+但需要注意的是，Xv6 for RISC-V 的实现中，函数 `userret` 是可以传入参数的，而参数中正包含了 `trapframe` 的地址，这其实也可以解决我们的问题。然而不幸的是，我们的 `trapret` 是不接受参数的，这意味着我们并不能将 `trapframe` 的地址传入 `trapret`，从而覆盖 SP 的值。
+
+思来想去，最后还是没有想到什么优雅的解决方案（能用 C 语言解决都已经算优雅了）。因此我就暴力地用汇编写了个函数 `void usertrapret(struct trapframe*)`，本质是对 `trapret` 的重载，区别在于可以接受一个 trapframe 指针作为参数了。
+
+```armasm {.line-numbers}
+# kern/trapasm.S
+
+/* Help forkret to call trapret in an expected way. */
+.global usertrapret
+usertrapret:
+    /* Overlay stack pointer in trapret. */
+    mov sp, x0
+    b   trapret
+```
+
+虽然暴力，但简单明了。
+
+终于，我们跳转到了函数 `trapret`，其作用主要是载入 trapframe，初始化所有寄存器。1.4.4 节中我们提到，寄存器 X30 和 ELR_EL1 设置为 `0`，其实指的是 `initcode` 在页表中的起始地址；寄存器 SP_EL0 设置为 `PGSIZE`，指的是用户栈的栈底地址，作为栈指针 SP 的初始值；寄存器 SPSR_EL1 设置为 `0`，表示用户态（EL0）。于是，`trapret` 在异常返回（`eret`）时，将返回到用户态下 `initcode` 的起始地址。至此，用户程序 `initcode` 开始执行。
+
+每当时间片耗尽，程序就要被强制暂停执行。这时我们通过 trap 调用函数 `yield` 来切换当前使用 CPU 的程序。trap 的部分我们放在 2.1 节再讲，这里我们只关注进程管理的部分。
+
+函数 `yield` 的工作很简单，就是设置进程状态为 RUNNABLE，然后调用函数 `sched`。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Give up the CPU for one scheduling round.
+ */
+void
+yield()
+{
+    struct proc* p = thiscpu->proc;
+    acquire(&p->lock);
+    p->state = RUNNABLE;
+    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
+    sched();
+    release(&p->lock);
+}
+```
+
+函数 `sched` 的工作也很简单，就是调用函数 `swtch` 切换 context，执行权回到函数 `scheduler`，然后由 `scheduler` 来决定下一个执行的程序，如此循环。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Enter scheduler. Must hold only p->lock
+ * and have changed p->state.
+ */
+void
+sched()
+{
+    struct cpu* c = thiscpu;
+    struct proc* p = c->proc;
+
+    if (!holding(&p->lock)) panic("\tsched: process not locked.\n");
+    if (p->state == RUNNING) panic("\tsched: process running.\n");
+
+    swtch(&p->context, c->scheduler);
+}
+```
+
+假设程序已经执行完了，最后系统函数 `sys_exit` 会调用函数 `exit` 退出。函数 `exit` 的主要工作是将当前进程的子进程托管给第一个用户进程 `initproc`，设置进程状态为 ZOMBIE，最后调用函数 `sched` 回到 `scheduler`。由于目前我们没有实现函数 `wait`，因此其实进程申请的资源暂时还无法释放，父子进程的概念暂时也没有什么用处，可以先不管。
+
+需要注意的是，暂时我们为了省事，是直接在 `initproc` 里执行的用户程序代码。但显然我们并不应该这么做，因为这样在程序退出时，也就把这第一个用户程序 `initproc` 给退出了，这样其实之后就无法利用 `initproc` 启动新程序了。未来我们实现了文件系统和其他一些必要的函数（如 `fork`, `sleep`, `wait`），真正开始执行用户程序后，这里需要将第 14 行取消注释。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Exit the current process. Does not return.
+ * An exited process remains in the zombie state
+ * until its parent calls wait() to find out it exited.
+ */
+void
+exit(int status)
+{
+    struct proc* p = thiscpu->proc;
+
+    // Temporarily disabled before user processes are implemented.
+    // if (p == initproc) panic("\texit: initproc exiting.\n");
+
+    acquire(&wait_lock);
+
+    // Give any children to init.
+    reparent(p);
+
+    acquire(&p->lock);
+    p->xstate = status;
+    p->state = ZOMBIE;
+
+    release(&wait_lock);
+
+    // Jump into the scheduler, never return.
+    sched();
+    panic("\texit: zombie returned!\n");
 }
 ```
 
