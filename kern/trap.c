@@ -1,14 +1,14 @@
 #include "trap.h"
 
 #include "arm.h"
-#include "mmu.h"
-#include "peripherals/irq.h"
-#include "syscall.h"
-#include "sysregs.h"
-
 #include "clock.h"
 #include "console.h"
+#include "mmu.h"
+#include "peripherals/irq.h"
 #include "proc.h"
+#include "sd.h"
+#include "syscall.h"
+#include "sysregs.h"
 #include "timer.h"
 #include "uart.h"
 
@@ -17,6 +17,7 @@ irq_init()
 {
     clock_init();
     put32(ENABLE_IRQS_1, AUX_INT);
+    put32(ENABLE_IRQS_2, VC_ARASANSDIO_INT);
     put32(GPU_INT_ROUTE, GPU_IRQ2CORE(0));
     cprintf("irq_init: success.\n");
 }
@@ -35,6 +36,8 @@ trap(struct trapframe* tf)
     } else if (src & IRQ_GPU) {
         if (get32(IRQ_PENDING_1) & AUX_INT)
             uart_intr();
+        else if (get32(IRQ_PENDING_2) & VC_ARASANSDIO_INT)
+            sd_intr();
         else
             bad = 1;
     } else {
