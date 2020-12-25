@@ -240,7 +240,7 @@ proc_alloc()
 }
 ```
 
-其中，函数 `proc_free` 的作用是清空进程的 PCB，并利用函数 `kfree` 释放申请的内存。
+其中，函数 `proc_free` 的作用是清空进程的 PCB，并利用函数 `kfree` 和 `vm_free` 释放申请的内存。
 
 ```c {.line-numbers}
 // kern/proc.c
@@ -261,7 +261,7 @@ proc_free(struct proc* p)
     if (p->kstack) kfree(p->kstack);
     p->kstack = NULL;
     p->sz = 0;
-    if (p->pgdir) kfree((char*)p->pgdir);
+    if (p->pgdir) vm_free(p->pgdir, 4);
     p->pgdir = NULL;
     p->tf = NULL;
     p->name[0] = '\0';
