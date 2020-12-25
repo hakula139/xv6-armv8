@@ -66,7 +66,7 @@ proc_free(struct proc* p)
     if (p->kstack) kfree(p->kstack);
     p->kstack = NULL;
     p->sz = 0;
-    if (p->pgdir) kfree((char*)p->pgdir);
+    if (p->pgdir) vm_free(p->pgdir, 4);
     p->pgdir = NULL;
     p->tf = NULL;
     p->name[0] = '\0';
