@@ -67,5 +67,7 @@ void user_init();
 void scheduler();
 void yield();
 void exit(int);
+void sleep(void*, struct spinlock*);
+void wakeup(void*);
 
 #endif  // INC_PROC_H_

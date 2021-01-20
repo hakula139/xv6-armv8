@@ -8,7 +8,7 @@
 
 > 请补全 `inc/buf.h` 以便于 SD 卡驱动中请求队列的实现，即每个请求都是一个 `buf`，所有请求排成一队。
 
-这里直接参考了 Xv6 [^1] 和 Xv6 for RISC-V [^2] 的设计，`struct buf` 的代码如下，具体作用参见注释：
+这里直接参考了 Xv6 [^1] 和 Xv6 for RISC-V [^2] 的设计，具体作用参见注释：
 
 ```c {.line-numbers}
 // inc/buf.h
@@ -25,7 +25,7 @@ struct buf {
 };
 ```
 
-对于一个请求（`buf`）队列，我们在文件 `kern/bio.c` 中定义了 `bcache`，其代码如下：
+对于一个请求（`buf`）队列，我们在 `kern/bio.c` 中定义了 `bcache`。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -182,6 +182,68 @@ brelease(struct buf* b)
 #### 2.1 Sleep 实现
 
 > 请完成 `kern/proc.c` 中的 `sleep` 和 `wakeup` 函数，并简要描述并分析你的设计。
+
+函数 `sleep` 的工作是释放进程所持有的锁，设置进程状态为 SLEEPING，并在 `chan` 上睡眠，然后调用函数 `sched` 回到 `scheduler`，决定下一个运行的程序；当进程被唤醒且再次轮到本进程执行时，重新获取进程本来持有的锁。由于我们在执行 `sleep` 前会先获取进程锁 `p->lock`，而执行 `wakeup` 时同样需要先获取进程锁，因此我们可以确定在执行 `sleep` 的过程中，进程不会被意外 `wakeup`，导致这个 `wakeup` 没有被捕获到，进程永远不再醒来。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Atomically release lock and sleep on chan.
+ * Reacquires lock when awakened.
+ */
+void
+sleep(void* chan, struct spinlock* lk)
+{
+    struct proc* p = thiscpu->proc;
+
+    // Must acquire p->lock in order to
+    // change p->state and then call sched.
+    // Once we hold p->lock, we can be
+    // guaranteed that we won't miss any wakeup
+    // (wakeup locks p->lock),
+    // so it's okay to release lk.
+
+    acquire(&p->lock);
+    release(lk);
+
+    // Go to sleep.
+    p->chan = chan;
+    p->state = SLEEPING;
+    sched();
+
+    // Tidy up.
+    p->chan = 0;
+
+    // Reacquire original lock.
+    release(&p->lock);
+    acquire(lk);
+}
+```
+
+函数 `wakeup` 的工作是将指定 `chan` 上睡眠的进程全部唤醒，设置进程状态为 RUNNABLE，从而可以被 `scheduler` 调度。
+
+```c {.line-numbers}
+// kern/proc.c
+
+/*
+ * Wake up all processes sleeping on chan.
+ * Must be called without any p->lock.
+ */
+void
+wakeup(void* chan)
+{
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        if (p != thiscpu->proc) {
+            acquire(&p->lock);
+            if (p->state == SLEEPING && p->chan == chan) {
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+        }
+    }
+}
+```
 
 #### 2.2 SD 卡初始化
 
