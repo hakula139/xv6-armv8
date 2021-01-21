@@ -56,7 +56,7 @@ git rebase origin/lab6
 - 块大小：每个块的大小，通常为 512 B
 - 逻辑区块地址（[Logical block addressing, LBA](https://wiki.osdev.org/LBA)）是从 0 开始的块下标，即第几块
 
-对于内核的其他模块而言，异步的块设备驱动通常包括三个函数，初始化函数如 `sd_init`、设备读写请求函数如 `sdrw`、设备中断处理函数如 `sd_intr`。设备的初始化比较硬件，暂且略过，让我们从读写函数开始讲起。
+对于内核的其他模块而言，异步的块设备驱动通常包括三个函数，初始化函数如 `sd_init`、设备读写请求函数如 `sd_rw`、设备中断处理函数如 `sd_intr`。设备的初始化比较硬件，暂且略过，让我们从读写函数开始讲起。
 
 ### 6.3.1 读写请求
 
@@ -83,7 +83,7 @@ sleep 和 wakeup 是互斥锁的实现方式。复习一下我们学过的条件
 
 ### 6.3.5 习题 3
 
-请完成 `kern/sd.c` 中的 `sd_init`，`sd_intr`，`sdrw`，然后分别在合适的地方调用 `sd_init` 和 `sd_test` 完成 SD 卡初始化并通过测试
+请完成 `kern/sd.c` 中的 `sd_init`，`sd_intr`，`sd_rw`，然后分别在合适的地方调用 `sd_init` 和 `sd_test` 完成 SD 卡初始化并通过测试
 
 
 
