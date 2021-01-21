@@ -247,7 +247,218 @@ wakeup(void* chan)
 
 #### 2.2 SD 卡初始化
 
-> 请完成 `kern/sd.c` 中的 `sd_init`, `sd_intr`, `sdrw`，然后分别在合适的地方调用 `sd_init` 和 `sd_test` 完成 SD 卡初始化并通过测试。
+> 请完成 `kern/sd.c` 中的 `sd_init`, `sd_intr`, `sd_rw`，然后分别在合适的地方调用 `sd_init` 和 `sd_test` 完成 SD 卡初始化并通过测试。
+
+我研究了半天，最后还是觉得要修改其他源代码才能比较优雅地实现这几个函数，否则结构实在太乱了，复用性也很差。而且引用的这个[源代码](https://github.com/moizumi99/RPiHaribote/blob/master/sdcard.c)的代码风格简直不忍直视，看得恶心，最后还是先全部简单改了一遍。完全改过来还是算了，style fix 约等于 refactor，像日志输出全是乱打的。强烈建议每一位 C / C++ 程序员在写代码前先通览一遍 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) 或者其他随便什么靠谱的 style guide，最起码要保证前后的格式是统一的，不要想怎么写就怎么写。
+
+##### 2.2.1 SD 卡读写磁盘：`sd_rw`
+
+为了优雅地实现 `sd_init`，我们决定先实现 `sd_rw`。
+
+这里我们就直接在函数 `_sd_start` 里修改了，因为它其实已经实现了 SD 卡的写操作，我们只需在它的基础上增加一个读操作即可。根据 `buf` 的 `flags` 中 `B_DIRTY` 位的值，我们可以判断此时应当采取读操作（`0`）还是写操作（`1`）。
+
+```c {.line-numbers}
+// kern/sd.c
+
+/* Start the request for b. Caller must hold sdlock. */
+static void
+_sd_start(struct buf* b)
+{
+    // Address is different depending on the card type.
+    // HC passes address as block number.
+    // SC passes address straight through.
+    int blockno = sd_card.type == SD_TYPE_2_HC ? b->blockno : b->blockno << 9;
+    int write = b->flags & B_DIRTY;
+    int cmd = write ? IX_WRITE_SINGLE : IX_READ_SINGLE;
+
+    cprintf(
+        "_sd_start: CPU %d, flag 0x%x, blockno %d, write=%d.\n", cpuid(),
+        b->flags, blockno, write);
+
+    // Ensure that any data operation has completed before doing the transfer.
+    disb();
+    asserts(
+        !*EMMC_INTERRUPT,
+        "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+        *EMMC_INTERRUPT);
+    disb();
+
+    *EMMC_BLKSIZECNT = BSIZE;
+
+    int resp = _sd_send_command_a(cmd, blockno);
+    asserts(!resp, "\tEMMC ERROR: Send command error.\n");
+
+    uint32_t* intbuf = (uint32_t*)b->data;
+    asserts(
+        !((uint32_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
+
+    if (write) {
+        resp = _sd_wait_for_interrupt(INT_WRITE_RDY);
+        asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to write.\n");
+        asserts(
+            !*EMMC_INTERRUPT,
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            *EMMC_INTERRUPT);
+        for (int done = 0; done < BSIZE / 4; ++done) {
+            *EMMC_DATA = intbuf[done];
+        }
+    } else {
+        resp = _sd_wait_for_interrupt(INT_READ_RDY);
+        asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to read.\n");
+        asserts(
+            !*EMMC_INTERRUPT,
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            *EMMC_INTERRUPT);
+        for (int done = 0; done < BSIZE / 4; ++done) {
+            intbuf[done] = *EMMC_DATA;
+        }
+    }
+
+    resp = _sd_wait_for_interrupt(INT_DATA_DONE);
+    asserts(!resp, "\tEMMC ERROR: Timeout waiting for data done.\n");
+}
+```
+
+然后在函数 `sd_rw` 里调用 `_sd_start` 对 `buf` 进行 I/O 操作，并将其 `flags` 的 `B_DIRTY` 位设置为 `0`，`B_VALID` 位设置为 `1`。
+
+```c {.line-numbers}
+// kern/sd.c
+
+/*
+ * Sync buf with disk.
+ * If B_DIRTY is set, write buf to disk, clear B_DIRTY, set B_VALID.
+ * Else if B_VALID is not set, read buf from disk, set B_VALID.
+ */
+void
+sd_rw(struct buf* b)
+{
+    acquire(&b->lock);
+    _sd_start(b);
+    b->flags &= ~B_DIRTY;
+    b->flags |= B_VALID;
+    release(&b->lock);
+}
+```
+
+##### 2.2.2 SD 卡初始化：`sd_init`
+
+函数 `sd_init` 的工作分为两部分：
+
+1. 初始化 SD 卡
+2. 解析主引导记录（Master Boot Record, MBR）
+
+对于第一部分，我们只需调用函数 `binit` 初始化 `bcache`，以及调用函数 `_sd_init` 初始化 SD 卡即可。
+
+对于第二部分，我们先从磁盘地址 `0x0` 处读取 MBR 到 `buf`；然后利用函数 `_parse_partition_entry` 解析每条磁盘分区表项（partition table entry）并输出其内容，其中 4 条分区表的地址分别为 `0x1BE`, `0x1CE`, `0x1DE`, `0x1EE`；最后输出 2 字节的结束标志（若为 `55`, `AA` 则表示 MBR 有效）。[^3]
+
+```c {.line-numbers}
+// kern/sd.c
+
+/*
+ * Initialize SD card and parse MBR.
+ * 1. The first partition should be FAT and is used for booting.
+ * 2. The second partition is used by our file system.
+ *
+ * See https://en.wikipedia.org/wiki/Master_boot_record
+ */
+void
+sd_init()
+{
+    /*
+     * Initialize the lock and request queue if any.
+     * Remember to call sd_init() at somewhere.
+     */
+
+    binit();
+    _sd_init();
+    asserts(sd_card.init, "\tFailed to initialize SD card.\n");
+
+    /*
+     * Read and parse 1st block (MBR) and collect whatever
+     * information you want.
+     */
+
+    struct buf mbr;
+    memset(&mbr, 0, sizeof(mbr));
+    sd_rw(&mbr);
+    asserts((uint32_t)mbr.flags & B_VALID, "\tMBR is not valid.\n");
+
+    uint8_t* partitions = mbr.data + 0x1BE;
+    for (int i = 0; i < 4; ++i) {
+        _parse_partition_entry(partitions + (i << 4), i + 1);
+    }
+
+    uint8_t* ending = mbr.data + 0x1FE;
+    cprintf("sd_init: Boot signature: %x %x\n", ending[0], ending[1]);
+    asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
+}
+```
+
+其中，函数 `_parse_partition_entry` 负责解析各分区表项，并输出以下信息 [^3]：
+
+1. 磁盘状态（state）
+2. 分区内第一个扇区的柱面-磁头-扇区（cylinder-head-sector, CHS）地址
+3. 分区类型（partition type）
+4. 分区内最后一个扇区的柱面-磁头-扇区（cylinder-head-sector, CHS）地址
+5. 分区内第一个扇区的逻辑区块地址（logical block address, LBA）
+6. 分区内的总扇区数（number of sectors）
+
+```c {.line-numbers}
+// kern/sd.c
+
+static void
+_parse_partition_entry(uint8_t* entry, int id)
+{
+    cprintf("sd_init: Partition %d: ", id);
+    for (int i = 0; i < 16; ++i) {
+        uint8_t byte = entry[i];
+        cprintf("%x%x ", byte >> 4, byte & 0xf);
+    }
+    cprintf("\n");
+
+    uint8_t status = entry[0];
+    cprintf("- Status: %d\n", status);
+
+    uint8_t head = entry[1];
+    uint8_t sector = entry[2] & 0x3f;
+    uint16_t cylinder = (((uint16_t)entry[2] & 0xc0) << 8) | entry[3];
+
+    cprintf("- CHS address of first absolute sector:\n");
+    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+
+    uint8_t partition_type = entry[4];
+    cprintf("- Partition type: %d\n", partition_type);
+
+    head = entry[5];
+    sector = entry[6] & 0x3f;
+    cylinder = (((uint16_t)entry[6] & 0xc0) << 8) | entry[7];
+    cprintf("- CHS address of last absolute sector:\n");
+    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+
+    uint32_t lba = _parse_uint32_t(&entry[8]);
+    cprintf("- LBA of first absolute sector: 0x%x", lba);
+
+    uint32_t sectorno = _parse_uint32_t(&entry[12]);
+    cprintf("- Number of sectors: %d", sectorno);
+}
+```
+
+这里函数 `_parse_uint32_t` 用于将 4 个字节（`uint8_t`）按照小端法（little-endian）合并为一个 32 位的整数（`uint32_t`）。
+
+```c {.line-numbers}
+// kern/sd.c
+
+static uint32_t
+_parse_uint32_t(uint8_t* bytes)
+{
+    return (((uint32_t)bytes[3]) << 24) | (((uint32_t)bytes[2]) << 16)
+           | (((uint32_t)bytes[1]) << 8) | (((uint32_t)bytes[0]) << 0);
+}
+```
+
+##### 2.2.3 SD 卡中断处理：`sd_intr`
+
+##### 2.2.4 SD 卡初始化及测试
 
 ### 3. 制作启动盘
 
@@ -265,5 +476,6 @@ wakeup(void* chan)
 - Emulator: QEMU emulator version 5.0.50
 - Using GNU Make 4.1
 
-[^1]: mit-pdos/xv6-public: xv6 OS - GitHub  
-[^2]: mit-pdos/xv6-riscv: Xv6 for RISC-V - GitHub
+[^1]: [mit-pdos/xv6-public: xv6 OS - GitHub](https://github.com/mit-pdos/xv6-public)  
+[^2]: [mit-pdos/xv6-riscv: Xv6 for RISC-V - GitHub](https://github.com/mit-pdos/xv6-riscv)  
+[^3]: [Master boot record - Wikipedia](https://en.wikipedia.org/wiki/Master_boot_record)

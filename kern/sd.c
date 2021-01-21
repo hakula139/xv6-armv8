@@ -3,14 +3,14 @@
 #include "sd.h"
 
 #include "arm.h"
+#include "buf.h"
 #include "console.h"
 #include "peripherals/gpio.h"
 #include "peripherals/mbox.h"
+#include "proc.h"
 #include "string.h"
 
-#include "proc.h"
-
-// Private functions.
+// Private functions
 static void _sd_start(struct buf* b);
 static void _sd_delayus(uint32_t cnt);
 static int _sd_init();
@@ -490,6 +490,49 @@ static int sd_base_clock;
 
 #define MBX_PROP_CLOCK_EMMC 1
 
+static uint32_t
+_parse_uint32_t(uint8_t* bytes)
+{
+    return (((uint32_t)bytes[3]) << 24) | (((uint32_t)bytes[2]) << 16)
+           | (((uint32_t)bytes[1]) << 8) | (((uint32_t)bytes[0]) << 0);
+}
+
+static void
+_parse_partition_entry(uint8_t* entry, int id)
+{
+    cprintf("sd_init: Partition %d: ", id);
+    for (int i = 0; i < 16; ++i) {
+        uint8_t byte = entry[i];
+        cprintf("%x%x ", byte >> 4, byte & 0xf);
+    }
+    cprintf("\n");
+
+    uint8_t status = entry[0];
+    cprintf("- Status: %d\n", status);
+
+    uint8_t head = entry[1];
+    uint8_t sector = entry[2] & 0x3f;
+    uint16_t cylinder = (((uint16_t)entry[2] & 0xc0) << 8) | entry[3];
+
+    cprintf("- CHS address of first absolute sector:\n");
+    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+
+    uint8_t partition_type = entry[4];
+    cprintf("- Partition type: %d\n", partition_type);
+
+    head = entry[5];
+    sector = entry[6] & 0x3f;
+    cylinder = (((uint16_t)entry[6] & 0xc0) << 8) | entry[7];
+    cprintf("- CHS address of last absolute sector:\n");
+    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+
+    uint32_t lba = _parse_uint32_t(&entry[8]);
+    cprintf("- LBA of first absolute sector: 0x%x", lba);
+
+    uint32_t sectorno = _parse_uint32_t(&entry[12]);
+    cprintf("- Number of sectors: %d", sectorno);
+}
+
 /*
  * Initialize SD card and parse MBR.
  * 1. The first partition should be FAT and is used for booting.
@@ -504,20 +547,29 @@ sd_init()
      * Initialize the lock and request queue if any.
      * Remember to call sd_init() at somewhere.
      */
-    /* TODO: Your code here. */
 
+    binit();
     _sd_init();
-    assert(sd_card.init);
+    asserts(sd_card.init, "\tFailed to initialize SD card.\n");
 
     /*
      * Read and parse 1st block (MBR) and collect whatever
      * information you want.
-     *
-     * Hint: Maybe need to use _sd_start for reading, and
-     * _sd_wait_for_interrupt for clearing certain interrupt.
      */
 
-    /* TODO: Your code here. */
+    struct buf mbr;
+    memset(&mbr, 0, sizeof(mbr));
+    sd_rw(&mbr);
+    asserts((uint32_t)mbr.flags & B_VALID, "\tMBR is not valid.\n");
+
+    uint8_t* partitions = mbr.data + 0x1BE;
+    for (int i = 0; i < 4; ++i) {
+        _parse_partition_entry(partitions + (i << 4), i + 1);
+    }
+
+    uint8_t* ending = mbr.data + 0x1FE;
+    cprintf("sd_init: Boot signature: %x %x\n", ending[0], ending[1]);
+    asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
 }
 
 static void
@@ -532,46 +584,57 @@ static void
 _sd_start(struct buf* b)
 {
     // Address is different depending on the card type.
-    // HC pass address as block #.
-    // SC pass address straight through.
-    int bno = sd_card.type == SD_TYPE_2_HC ? b->blockno : b->blockno << 9;
+    // HC passes address as block number.
+    // SC passes address straight through.
+    int blockno = sd_card.type == SD_TYPE_2_HC ? b->blockno : b->blockno << 9;
     int write = b->flags & B_DIRTY;
+    int cmd = write ? IX_WRITE_SINGLE : IX_READ_SINGLE;
 
     cprintf(
-        "_sd_start: CPU %d, flag 0x%x, bno %d, write=%d.\n", cpuid(), b->flags,
-        bno, write);
+        "_sd_start: CPU %d, flag 0x%x, blockno %d, write=%d.\n", cpuid(),
+        b->flags, blockno, write);
 
-    disb();
     // Ensure that any data operation has completed before doing the transfer.
+    disb();
     asserts(
-        !*EMMC_INTERRUPT, "\tEMMC interrupt flag should be empty: 0x%x. ",
+        !*EMMC_INTERRUPT,
+        "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
         *EMMC_INTERRUPT);
     disb();
 
-    // Work out the status, interrupt and command values for the transfer.
-    int cmd = write ? IX_WRITE_SINGLE : IX_READ_SINGLE;
+    *EMMC_BLKSIZECNT = BSIZE;
 
-    int resp;
-    *EMMC_BLKSIZECNT = 512;
-    if ((resp = _sd_send_command_a(cmd, bno))) {
-        panic("\tEMMC send command error.\n");
-    }
+    int resp = _sd_send_command_a(cmd, blockno);
+    asserts(!resp, "\tEMMC ERROR: Send command error.\n");
 
-    int done = 0;
     uint32_t* intbuf = (uint32_t*)b->data;
     asserts(
-        (((int64_t)b->data) & 0x03) == 0,
-        "\tOnly support word-aligned buffers. ");
+        !((uint32_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
 
     if (write) {
-        // Wait for ready interrupt for the next block.
-        if ((resp = _sd_wait_for_interrupt(INT_WRITE_RDY))) {
-            panic("\tEMMC ERROR: Timeout waiting for ready to write.\n");
-            // return sd_debug_response(resp);
+        resp = _sd_wait_for_interrupt(INT_WRITE_RDY);
+        asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to write.\n");
+        asserts(
+            !*EMMC_INTERRUPT,
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            *EMMC_INTERRUPT);
+        for (int done = 0; done < BSIZE / 4; ++done) {
+            *EMMC_DATA = intbuf[done];
         }
-        asserts(!*EMMC_INTERRUPT, "%d ", *EMMC_INTERRUPT);
-        while (done < 128) *EMMC_DATA = intbuf[done++];
+    } else {
+        resp = _sd_wait_for_interrupt(INT_READ_RDY);
+        asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to read.\n");
+        asserts(
+            !*EMMC_INTERRUPT,
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            *EMMC_INTERRUPT);
+        for (int done = 0; done < BSIZE / 4; ++done) {
+            intbuf[done] = *EMMC_DATA;
+        }
     }
+
+    resp = _sd_wait_for_interrupt(INT_DATA_DONE);
+    asserts(!resp, "\tEMMC ERROR: Timeout waiting for data done.\n");
 }
 
 /* The interrupt handler. */
@@ -628,9 +691,13 @@ sd_intr()
  * Else if B_VALID is not set, read buf from disk, set B_VALID.
  */
 void
-sdrw(struct buf* b)
+sd_rw(struct buf* b)
 {
-    /* TODO: Your code here. */
+    acquire(&b->lock);
+    _sd_start(b);
+    b->flags &= ~B_DIRTY;
+    b->flags |= B_VALID;
+    release(&b->lock);
 }
 
 /* SD card test and benchmark. */
@@ -651,22 +718,22 @@ sd_test()
         // Backup.
         b[0].flags = 0;
         b[0].blockno = i;
-        sdrw(&b[0]);
+        sd_rw(&b[0]);
 
         // Write some value.
         b[i].flags = B_DIRTY;
         b[i].blockno = i;
         for (int j = 0; j < BSIZE; j++) b[i].data[j] = i * j & 0xFF;
-        sdrw(&b[i]);
+        sd_rw(&b[i]);
 
         memset(b[i].data, 0, sizeof(b[i].data));
         // Read back and check
         b[i].flags = 0;
-        sdrw(&b[i]);
+        sd_rw(&b[i]);
         for (int j = 0; j < BSIZE; j++) assert(b[i].data[j] == (i * j & 0xFF));
         // Restore previous value.
         b[0].flags = B_DIRTY;
-        sdrw(&b[0]);
+        sd_rw(&b[0]);
     }
 
     // Read benchmark
@@ -676,7 +743,7 @@ sd_test()
     for (int i = 0; i < n; i++) {
         b[i].flags = 0;
         b[i].blockno = i;
-        sdrw(&b[i]);
+        sd_rw(&b[i]);
     }
     disb();
     t = timestamp() - t;
@@ -692,7 +759,7 @@ sd_test()
     for (int i = 0; i < n; i++) {
         b[i].flags = B_DIRTY;
         b[i].blockno = i;
-        sdrw(&b[i]);
+        sd_rw(&b[i]);
     }
     disb();
     t = timestamp() - t;
@@ -1360,14 +1427,14 @@ _sd_init()
     if ((resp = sd_get_base_clock())) return resp;
 
     // Reset the card.
-    cprintf("- _sd_init: reset the card.\n");
+    cprintf("_sd_init: reset the card.\n");
     if ((resp = sd_reset_card(C1_SRST_HC))) return resp;
 
     disb();
     // Send SEND_IF_COND,0x000001AA (CMD8) voltage range 0x1 check pattern 0xAA
     // If voltage range and check pattern don't match, look for older card.
     resp = _sd_send_command_a(IX_SEND_IF_COND, 0x000001AA);
-    cprintf("- _sd_send_command_a response: %d\n", resp);
+    cprintf("_sd_init: _sd_send_command_a response: %d\n", resp);
     if (resp == SD_OK) {
         // Card responded with voltage and check pattern.
         // Resolve voltage and check for high capacity card.
@@ -1387,7 +1454,8 @@ _sd_init()
         return resp;
 
     else {
-        cprintf("- no response to SEND_IF_COND, treat as an old card.\n");
+        cprintf(
+            "_sd_init: no response to SEND_IF_COND, treat as an old card.\n");
         // If there appears to be a command in progress, reset the card.
         if ((*EMMC_STATUS & SR_CMD_INHIBIT)
             && (resp = sd_reset_card(C1_SRST_HC)))

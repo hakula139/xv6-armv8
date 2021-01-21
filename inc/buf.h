@@ -22,4 +22,11 @@ struct buf {
     struct buf* next;      // more recent buffer
 };
 
+void binit();
+struct buf* bread(uint32_t, uint32_t);
+void bwrite(struct buf*);
+void brelease(struct buf*);
+void bpin(struct buf*);
+void bunpin(struct buf*);
+
 #endif  // INC_BUF_H_
