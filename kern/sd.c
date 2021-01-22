@@ -513,9 +513,9 @@ _parse_partition_entry(uint8_t* entry, int id)
     uint8_t head = entry[1];
     uint8_t sector = entry[2] & 0x3f;
     uint16_t cylinder = (((uint16_t)entry[2] & 0xc0) << 8) | entry[3];
-
-    cprintf("- CHS address of first absolute sector:\n");
-    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+    cprintf(
+        "- CHS address of first absolute sector: head=%d, sector=%d, cylinder=%d\n",
+        head, sector, cylinder);
 
     uint8_t partition_type = entry[4];
     cprintf("- Partition type: %d\n", partition_type);
@@ -523,8 +523,9 @@ _parse_partition_entry(uint8_t* entry, int id)
     head = entry[5];
     sector = entry[6] & 0x3f;
     cylinder = (((uint16_t)entry[6] & 0xc0) << 8) | entry[7];
-    cprintf("- CHS address of last absolute sector:\n");
-    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+    cprintf(
+        "- CHS address of last absolute sector: head=%d, sector=%d, cylinder=%d\n",
+        head, sector, cylinder);
 
     uint32_t lba = _parse_uint32_t(&entry[8]);
     cprintf("- LBA of first absolute sector: 0x%x\n", lba);
@@ -568,7 +569,7 @@ sd_init()
     }
 
     uint8_t* ending = mbr.data + 0x1FE;
-    cprintf("sd_init: Boot signature: %x %x\n", ending[0], ending[1]);
+    cprintf("- Boot signature: %x %x\n", ending[0], ending[1]);
     asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
 }
 
@@ -600,7 +601,7 @@ _sd_start(struct buf* b)
     disb();
     asserts(
         !*EMMC_INTERRUPT,
-        "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+        "\tEMMC ERROR: Interrupt flag should be empty: 0x%x\n",
         *EMMC_INTERRUPT);
     disb();
 
@@ -618,7 +619,7 @@ _sd_start(struct buf* b)
         asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to write.\n");
         asserts(
             !*EMMC_INTERRUPT,
-            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x\n",
             *EMMC_INTERRUPT);
         for (int done = 0; done < BSIZE / 4; ++done) {
             *EMMC_DATA = intbuf[done];
@@ -628,7 +629,7 @@ _sd_start(struct buf* b)
         asserts(!resp, "\tEMMC ERROR: Timeout waiting for ready to read.\n");
         asserts(
             !*EMMC_INTERRUPT,
-            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
+            "\tEMMC ERROR: Interrupt flag should be empty: 0x%x\n",
             *EMMC_INTERRUPT);
         for (int done = 0; done < BSIZE / 4; ++done) {
             intbuf[done] = *EMMC_DATA;
@@ -730,7 +731,7 @@ sd_test()
     disb();
 
     cprintf(
-        "sd_test: read %lld B (%lld  MB), t: %lld cycles, speed: %lld.%lld MB/s.\n",
+        "sd_test: read %lld B (%lld MB), t: %lld cycles, speed: %lld.%lld MB/s\n",
         n * BSIZE, mb, t, mb * f / t, (mb * f * 10 / t) % 10);
 
     // Write benchmark
@@ -750,7 +751,7 @@ sd_test()
     disb();
 
     cprintf(
-        "sd_test: write %lldB (%lldMB), t: %lld cycles, speed: %lld.%lld MB/s.\n",
+        "sd_test: write %lld B (%lld MB), t: %lld cycles, speed: %lld.%lld MB/s\n",
         n * BSIZE, mb, t, mb * f / t, (mb * f * 10 / t) % 10);
 }
 
@@ -1165,7 +1166,7 @@ sd_set_clock(int freq)
         _sd_delayus(1);
     if (count <= 0) {
         cprintf(
-            "* EMMC ERROR: Set clock: timeout waiting for inhibit flags. Status %08x.\n",
+            "* EMMC ERROR: Set clock: timeout waiting for inhibit flags. Status: %08x\n",
             *EMMC_STATUS);
         return SD_ERROR_CLOCK;
     }
@@ -1187,7 +1188,7 @@ sd_set_clock(int freq)
     count = 10000;
     while (!(*EMMC_CONTROL1 & C1_CLK_STABLE) && count--) _sd_delayus(10);
     if (count <= 0) {
-        cprintf("* EMMC: ERROR: failed to get stable clock.\n");
+        cprintf("* EMMC ERROR: failed to get stable clock.\n");
         return SD_ERROR_CLOCK;
     }
 
@@ -1346,10 +1347,10 @@ sd_get_base_clock()
 {
     sd_base_clock = mbox_get_clock_rate(MBX_PROP_CLOCK_EMMC);
     if (sd_base_clock == -1) {
-        cprintf("* EMMC: Error, failed to get base clock from mailbox.\n");
+        cprintf("* EMMC ERROR: Failed to get base clock from mailbox.\n");
         return SD_ERROR;
     }
-    cprintf("- SD base clock rate from mailbox: %d.\n", sd_base_clock);
+    cprintf("- SD base clock rate from mailbox: %d\n", sd_base_clock);
     return SD_OK;
 }
 
@@ -1409,14 +1410,14 @@ _sd_init()
     if ((resp = sd_get_base_clock())) return resp;
 
     // Reset the card.
-    cprintf("_sd_init: reset the card.\n");
+    cprintf("- Reset the card.\n");
     if ((resp = sd_reset_card(C1_SRST_HC))) return resp;
 
     disb();
     // Send SEND_IF_COND,0x000001AA (CMD8) voltage range 0x1 check pattern 0xAA
     // If voltage range and check pattern don't match, look for older card.
     resp = _sd_send_command_a(IX_SEND_IF_COND, 0x000001AA);
-    cprintf("_sd_init: _sd_send_command_a response: %d\n", resp);
+    cprintf("- Send command response: %d\n", resp);
     if (resp == SD_OK) {
         // Card responded with voltage and check pattern.
         // Resolve voltage and check for high capacity card.
@@ -1437,7 +1438,7 @@ _sd_init()
 
     else {
         cprintf(
-            "_sd_init: no response to SEND_IF_COND, treat as an old card.\n");
+            "- No response to SEND_IF_COND, treat as an old card.\n");
         // If there appears to be a command in progress, reset the card.
         if ((*EMMC_STATUS & SR_CMD_INHIBIT)
             && (resp = sd_reset_card(C1_SRST_HC)))

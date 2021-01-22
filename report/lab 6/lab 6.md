@@ -450,7 +450,7 @@ sd_init()
     }
 
     uint8_t* ending = mbr.data + 0x1FE;
-    cprintf("sd_init: Boot signature: %x %x\n", ending[0], ending[1]);
+    cprintf("- Boot signature: %x %x\n", ending[0], ending[1]);
     asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
 }
 ```
@@ -483,9 +483,9 @@ _parse_partition_entry(uint8_t* entry, int id)
     uint8_t head = entry[1];
     uint8_t sector = entry[2] & 0x3f;
     uint16_t cylinder = (((uint16_t)entry[2] & 0xc0) << 8) | entry[3];
-
-    cprintf("- CHS address of first absolute sector:\n");
-    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+    cprintf(
+        "- CHS address of first absolute sector: head=%d, sector=%d, cylinder=%d\n",
+        head, sector, cylinder);
 
     uint8_t partition_type = entry[4];
     cprintf("- Partition type: %d\n", partition_type);
@@ -493,8 +493,9 @@ _parse_partition_entry(uint8_t* entry, int id)
     head = entry[5];
     sector = entry[6] & 0x3f;
     cylinder = (((uint16_t)entry[6] & 0xc0) << 8) | entry[7];
-    cprintf("- CHS address of last absolute sector:\n");
-    cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
+    cprintf(
+        "- CHS address of last absolute sector: head=%d, sector=%d, cylinder=%d\n",
+        head, sector, cylinder);
 
     uint32_t lba = _parse_uint32_t(&entry[8]);
     cprintf("- LBA of first absolute sector: 0x%x\n", lba);
