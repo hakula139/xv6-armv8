@@ -579,7 +579,9 @@ _sd_delayus(uint32_t c)
     delayus(c * 3);
 }
 
-/* Start the request for b. Caller must hold sdlock. */
+/*
+ * Start the request for b. Caller must hold sdlock.
+ */
 static void
 _sd_start(struct buf* b)
 {
@@ -637,46 +639,19 @@ _sd_start(struct buf* b)
     asserts(!resp, "\tEMMC ERROR: Timeout waiting for data done.\n");
 }
 
-/* The interrupt handler. */
+/*
+ * The interrupt handler.
+ */
 void
 sd_intr()
 {
-    acquire(&bcache);
-    if (list_empty(&sdque)) {
-        cprintf(
-            "sd receive redundent interrupt 0x%x, omitted.\n", *EMMC_INTERRUPT);
-    } else {
-        int i = *EMMC_INTERRUPT;
-
-        // FIXME: Restart when failed
-        asserts((i & INT_DATA_DONE) || (i & INT_READ_RDY), "unexpected sd
-    intr");
-
-        *EMMC_INTERRUPT = i; // Clear interrupt.
-        disb();
-
-        struct buf *b = list_front(&sdque);
-        int write = b->flags & B_DIRTY;
-        if (!((write && i == INT_DATA_DONE) || (!write && INT_READ_RDY))) {
-            _sd_start(b);
-            // FIXME: don't panic
-            cprintf("sd intr unexpected: 0x%x, restarted.\n", i);
-        } else {
-            if (!write) {
-                uint32_t* intbuf = (uint32_t*)b->data;
-                for (int done = 0; done < 128;) intbuf[done++] = *EMMC_DATA;
-                _sd_wait_for_interrupt(INT_DATA_DONE);
-            }
-
-            b->flags |= B_VALID;
-            b->flags &= ~B_DIRTY;
-            wakeup(b);
-
-            list_pop_front(&sdque);
-            if (!list_empty(&sdque)) _sd_start(list_front(&sdque));
-        }
+    int i = *EMMC_INTERRUPT;
+    if (!(i & INT_DATA_DONE)) {
+        cprintf("\tsd_intr: Unexpected SD interrupt.\n");
+        return;
     }
-    release(&sdlock);
+    *EMMC_INTERRUPT = i;  // Clear interrupt
+    disb();
 }
 
 /*
@@ -687,10 +662,12 @@ sd_intr()
 void
 sd_rw(struct buf* b)
 {
+    acquire(&b->lock);
     _sd_start(b);
+    sd_intr(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
-    release(&b->lock);
+    brelease(b);
 }
 
 /* SD card test and benchmark. */
@@ -701,31 +678,39 @@ sd_test()
     int n = sizeof(b) / sizeof(b[0]);
     int mb = (n * BSIZE) >> 20;
     assert(mb);
+
     int64_t f, t;
     asm volatile("mrs %[freq], cntfrq_el0" : [freq] "=r"(f));
     cprintf("sd_test: begin nblocks %d\n", n);
 
     cprintf("sd_test: sd check rw...\n");
-    // Read/write test
+    // Read / write test
     for (int i = 1; i < n; i++) {
-        // Backup.
+        // Backup
         b[0].flags = 0;
         b[0].blockno = i;
+        bpin(&b[0]);
         sd_rw(&b[0]);
 
-        // Write some value.
+        // Write some value
         b[i].flags = B_DIRTY;
         b[i].blockno = i;
+        bpin(&b[i]);
         for (int j = 0; j < BSIZE; j++) b[i].data[j] = i * j & 0xFF;
         sd_rw(&b[i]);
 
         memset(b[i].data, 0, sizeof(b[i].data));
+
         // Read back and check
         b[i].flags = 0;
+        bpin(&b[i]);
         sd_rw(&b[i]);
+
         for (int j = 0; j < BSIZE; j++) assert(b[i].data[j] == (i * j & 0xFF));
-        // Restore previous value.
+
+        // Restore previous value
         b[0].flags = B_DIRTY;
+        bpin(&b[0]);
         sd_rw(&b[0]);
     }
 
@@ -733,14 +718,18 @@ sd_test()
     disb();
     t = timestamp();
     disb();
+
     for (int i = 0; i < n; i++) {
         b[i].flags = 0;
         b[i].blockno = i;
+        bpin(&b[i]);
         sd_rw(&b[i]);
     }
+
     disb();
     t = timestamp() - t;
     disb();
+
     cprintf(
         "sd_test: read %lldB (%lldMB), t: %lld cycles, speed: %lld.%lld MB/s.\n",
         n * BSIZE, mb, t, mb * f / t, (mb * f * 10 / t) % 10);
@@ -749,11 +738,14 @@ sd_test()
     disb();
     t = timestamp();
     disb();
+
     for (int i = 0; i < n; i++) {
         b[i].flags = B_DIRTY;
         b[i].blockno = i;
+        bpin(&b[i]);
         sd_rw(&b[i]);
     }
+
     disb();
     t = timestamp() - t;
     disb();

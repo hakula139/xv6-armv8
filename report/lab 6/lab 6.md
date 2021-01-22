@@ -66,7 +66,7 @@ binit()
 }
 ```
 
-当我们需要进行读操作时，我们先调用函数 `bget` 在 `bcache` 中获取一个可用的 `buf`。如果这个请求已经在 `bcache` 里了，那么就将相应的 `buf` 加锁并返回；否则，我们回收一个最早使用过的（Least Recently Used, LRU）且当前不在使用中的 `buf`，然后将这个 `buf` 加锁并返回。
+当我们需要进行读操作时，我们先调用函数 `bget` 在 `bcache` 中获取一个可用的 `buf`。如果这个请求已经在 `bcache` 里了，那么就将相应的 `buf` 的 `refcnt` 加 `1`，然后加锁并返回；否则，我们回收一个最早使用过的（Least Recently Used, LRU）且当前不在使用中的 `buf`，将其 `refcnt` 设置为 `1`，然后加锁并返回。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -143,7 +143,7 @@ bwrite(struct buf* b)
 }
 ```
 
-最后，当我们需要释放一个 `buf` 时，我们调用函数 `brelease` 将它的 `refcnt` 减 1。如果此时 `refcnt` 的值为 0，说明已经没有设备在等待这个 `buf` 了，那么我们就将这个 `buf` 移动到 `bcache` 的头部（实际是 `head->next`），表示这是一个最晚使用过的（Most Recently Used, MRU）`buf`。
+最后，当我们需要释放一个 `buf` 时，我们调用函数 `brelease` 将它的 `refcnt` 减 `1`。如果此时 `refcnt` 的值为 `0`，说明已经没有设备在等待这个 `buf` 了，那么我们就将这个 `buf` 移动到 `bcache` 的头部（实际是 `head->next`），表示这是一个最晚使用过的（Most Recently Used, MRU）`buf`。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -169,6 +169,32 @@ brelease(struct buf* b)
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
+    release(&bcache.lock);
+}
+```
+
+此外，我们还定义了函数 `bpin` 和 `bunpin`，分别用于将一个 `buf` 的 `refcnt` 加 `1` 或减 `1`。
+
+```c {.line-numbers}
+// kern/bio.c
+
+void
+bpin(struct buf* b)
+{
+    acquire(&bcache.lock);
+    b->refcnt++;
+    release(&bcache.lock);
+}
+```
+
+```c {.line-numbers}
+// kern/bio.c
+
+void
+bunpin(struct buf* b)
+{
+    acquire(&bcache.lock);
+    b->refcnt--;
     release(&bcache.lock);
 }
 ```
@@ -251,12 +277,14 @@ wakeup(void* chan)
 
 为了优雅地实现 `sd_init`，我们决定先实现 `sd_rw`。
 
-这里我们就直接在函数 `_sd_start` 里修改了，因为它其实已经实现了 SD 卡的写操作，我们只需在它的基础上增加一个读操作即可。根据 `buf` 的 `flags` 中 `B_DIRTY` 位的值，我们可以判断此时应当采取读操作（`0`）还是写操作（`1`）。
+这里我们就直接在函数 `_sd_start` 里修改了，因为它其实已经实现了 SD 卡的写操作，我们只需在它的基础上增加一个读操作即可（**直接读到** `buf->data`）。根据 `buf` 的 `flags` 中 `B_DIRTY` 位的值，我们可以判断此时应当采取读操作（`0`）还是写操作（`1`）。
 
 ```c {.line-numbers}
 // kern/sd.c
 
-/* Start the request for b. Caller must hold sdlock. */
+/*
+ * Start the request for b. Caller must hold sdlock.
+ */
 static void
 _sd_start(struct buf* b)
 {
@@ -315,7 +343,7 @@ _sd_start(struct buf* b)
 }
 ```
 
-然后在函数 `sd_rw` 里调用 `_sd_start` 对 `buf` 进行 I/O 操作，并将其 `flags` 的 `B_DIRTY` 位设置为 `0`，`B_VALID` 位设置为 `1`。
+在函数 `sd_rw` 里，我们先调用函数 `_sd_start` 对 `buf` 进行 I/O 操作，然后调用函数 `sd_intr` 处理中断（稍后会讲），接下来将其 `flags` 的 `B_DIRTY` 位设置为 `0`、`B_VALID` 位设置为 `1`，最后调用函数 `brelease` 释放 `buf`（见 1.1 节）。
 
 ```c {.line-numbers}
 // kern/sd.c
@@ -328,14 +356,39 @@ _sd_start(struct buf* b)
 void
 sd_rw(struct buf* b)
 {
+    acquire(&b->lock);
     _sd_start(b);
+    sd_intr(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
-    release(&b->lock);
+    brelease(b);
 }
 ```
 
-##### 2.2.2 SD 卡初始化：`sd_init`
+##### 2.2.2 SD 卡中断处理：`sd_intr`
+
+函数 `sd_intr` 的工作是处理设备中断。具体来说，检查请求是否已执行完毕，然后清空中断信息。
+
+```c {.line-numbers}
+// kern/sd.c
+
+/*
+ * The interrupt handler.
+ */
+void
+sd_intr()
+{
+    int i = *EMMC_INTERRUPT;
+    if (!(i & INT_DATA_DONE)) {
+        cprintf("\tsd_intr: Unexpected SD interrupt.\n");
+        return;
+    }
+    *EMMC_INTERRUPT = i;  // Clear interrupt
+    disb();
+}
+```
+
+##### 2.2.3 SD 卡初始化：`sd_init`
 
 函数 `sd_init` 的工作分为两部分：
 
@@ -450,8 +503,6 @@ _parse_uint32_t(uint8_t* bytes)
            | (((uint32_t)bytes[1]) << 8) | (((uint32_t)bytes[0]) << 0);
 }
 ```
-
-##### 2.2.3 SD 卡中断处理：`sd_intr`
 
 ##### 2.2.4 SD 卡初始化及测试
 
