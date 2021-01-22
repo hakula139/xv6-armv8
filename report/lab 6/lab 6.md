@@ -506,6 +506,24 @@ _parse_uint32_t(uint8_t* bytes)
 
 ##### 2.2.4 SD 卡初始化及测试
 
+在函数 `main` 中，调用函数 `sd_init` 完成 SD 卡初始化，调用函数 `sd_test` 进行测试。
+
+```c {.line-numbers}
+// kern/main.c
+
+void
+main()
+{
+    if (cpuid() == 0) {
+        // ...
+        sd_init();
+        sd_test();
+        // ...
+    }
+    // ...
+}
+```
+
 ### 3. 制作启动盘
 
 #### 3.1 获取分区信息

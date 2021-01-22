@@ -22,5 +22,6 @@
 void sd_init();
 void sd_intr();
 void sd_rw(struct buf*);
+void sd_test();
 
 #endif  // INC_SD_H_
