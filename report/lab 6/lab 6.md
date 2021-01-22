@@ -452,6 +452,8 @@ sd_init()
     uint8_t* ending = mbr.data + 0x1FE;
     cprintf("- Boot signature: %x %x\n", ending[0], ending[1]);
     asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
+
+    cprintf("sd_init: success.\n");
 }
 ```
 
