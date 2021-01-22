@@ -285,3 +285,53 @@ exit(int status)
     sched();
     panic("\texit: zombie returned!\n");
 }
+
+/*
+ * Atomically release lock and sleep on chan.
+ * Reacquires lock when awakened.
+ */
+void
+sleep(void* chan, struct spinlock* lk)
+{
+    struct proc* p = thiscpu->proc;
+
+    // Must acquire p->lock in order to
+    // change p->state and then call sched.
+    // Once we hold p->lock, we can be
+    // guaranteed that we won't miss any wakeup
+    // (wakeup locks p->lock),
+    // so it's okay to release lk.
+
+    acquire(&p->lock);
+    release(lk);
+
+    // Go to sleep.
+    p->chan = chan;
+    p->state = SLEEPING;
+    sched();
+
+    // Tidy up.
+    p->chan = 0;
+
+    // Reacquire original lock.
+    release(&p->lock);
+    acquire(lk);
+}
+
+/*
+ * Wake up all processes sleeping on chan.
+ * Must be called without any p->lock.
+ */
+void
+wakeup(void* chan)
+{
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        if (p != thiscpu->proc) {
+            acquire(&p->lock);
+            if (p->state == SLEEPING && p->chan == chan) {
+                p->state = RUNNABLE;
+            }
+            release(&p->lock);
+        }
+    }
+}

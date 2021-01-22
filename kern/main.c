@@ -4,6 +4,7 @@
 #include "console.h"
 #include "kalloc.h"
 #include "proc.h"
+#include "sd.h"
 #include "spinlock.h"
 #include "string.h"
 #include "timer.h"
@@ -27,6 +28,8 @@ main()
         irq_init();
         timer_init();
         user_init();
+        sd_init();
+        sd_test();
         started = 1;  // allow APs to run
     } else {
         while (!started) {}
