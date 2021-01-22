@@ -343,7 +343,7 @@ _sd_start(struct buf* b)
 }
 ```
 
-在函数 `sd_rw` 里，我们先调用函数 `_sd_start` 对 `buf` 进行 I/O 操作，然后调用函数 `sd_intr` 处理中断（稍后会讲），接下来将其 `flags` 的 `B_DIRTY` 位设置为 `0`、`B_VALID` 位设置为 `1`，最后调用函数 `brelease` 释放 `buf`（见 1.1 节）。
+在函数 `sd_rw` 里，我们先调用函数 `_sd_start` 对 `buf` 进行 I/O 操作，然后将其 `flags` 的 `B_DIRTY` 位设置为 `0`、`B_VALID` 位设置为 `1`，最后调用函数 `brelease` 释放 `buf`（见 1.1 节）。
 
 ```c {.line-numbers}
 // kern/sd.c
@@ -358,7 +358,6 @@ sd_rw(struct buf* b)
 {
     acquire(&b->lock);
     _sd_start(b);
-    sd_intr(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
     brelease(b);
@@ -387,6 +386,20 @@ sd_intr()
     disb();
 }
 ```
+
+我稍微解释一下为什么只有这么点内容。简单来说是因为大多数事情已经被其他函数干掉了，具体来说：
+
+1. 不需要检查 `bcache` 是否为空，因为我们不需要对 `bcache` 中的 `buf` 进行读写，原因见 2.
+2. 不需要检查中断是否可能为 `INT_READ_RDY`，因为我们在函数 `_sd_start` 里已经完成了读取到 `buf->data` 的操作，它只能为 `INT_DATA_DONE`
+3. 不需要获取 `bcache` 的队首 `buf`，原因同 1.
+4. 不需要判断请求类型，并据此判断中断是否合法，原因同 2.
+5. 不需要将数据读取到 `buf->data`，原因同 2.
+6. 不需要设置 `buf->flags`，因为我们在函数 `sd_rw` 里完成了这项操作
+7. 不需要唤醒 `buf`，因为我们在函数 `brelease` 里完成了这项操作
+8. 不知道是否需要继续进行下一个 `buf` 的读写操作，因为测试代码里似乎没有对函数 `sd_intr` 的测试，我不清楚文件系统里会怎么调用这个 `sd_intr`
+   - 毕竟文件系统是我自己设计的，而我大概不太会采用样例里的这个中断处理逻辑
+   - 目前我的 `bcache` 不需要手动维护其结构，如果需要一个清空 `buf` 队列的操作（我猜 `sd_intr` 可能想干这个事情），到时候我可以直接在 `bcache` 提供一个方法 `bclear`，思路是循环调用 `sd_rw`，并不需要让 `sd_intr` 去处理这个事情
+   - 还是要看实际的应用场景，在有函数需要用到 `sd_intr` 前我不打算写这一部分，反正这个到时候加起来很快的
 
 ##### 2.2.3 SD 卡初始化：`sd_init`
 
@@ -484,10 +497,10 @@ _parse_partition_entry(uint8_t* entry, int id)
     cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
 
     uint32_t lba = _parse_uint32_t(&entry[8]);
-    cprintf("- LBA of first absolute sector: 0x%x", lba);
+    cprintf("- LBA of first absolute sector: 0x%x\n", lba);
 
     uint32_t sectorno = _parse_uint32_t(&entry[12]);
-    cprintf("- Number of sectors: %d", sectorno);
+    cprintf("- Number of sectors: %d\n", sectorno);
 }
 ```
 
