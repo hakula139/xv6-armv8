@@ -592,9 +592,9 @@ _sd_start(struct buf* b)
     int write = b->flags & B_DIRTY;
     int cmd = write ? IX_WRITE_SINGLE : IX_READ_SINGLE;
 
-    cprintf(
-        "_sd_start: CPU %d, flag 0x%x, blockno %d, write=%d.\n", cpuid(),
-        b->flags, blockno, write);
+    // cprintf(
+    //     "_sd_start: CPU %d, flag 0x%x, blockno %d, write=%d.\n", cpuid(),
+    //     b->flags, blockno, write);
 
     // Ensure that any data operation has completed before doing the transfer.
     disb();
@@ -730,7 +730,7 @@ sd_test()
     disb();
 
     cprintf(
-        "sd_test: read %lldB (%lldMB), t: %lld cycles, speed: %lld.%lld MB/s.\n",
+        "sd_test: read %lld B (%lld  MB), t: %lld cycles, speed: %lld.%lld MB/s.\n",
         n * BSIZE, mb, t, mb * f / t, (mb * f * 10 / t) % 10);
 
     // Write benchmark
