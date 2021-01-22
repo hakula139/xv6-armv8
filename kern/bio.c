@@ -1,4 +1,5 @@
 #include "buf.h"
+#include "sd.h"
 #include "spinlock.h"
 #include "types.h"
 
@@ -73,10 +74,7 @@ struct buf*
 bread(uint32_t dev, uint32_t blockno)
 {
     struct buf* b = bget(dev, blockno);
-    if (!(b->flags & B_VALID)) {
-        // TODO:Limplement io_disk_rw (read)
-        // io_disk_rw(b, 0);
-    }
+    if (!(b->flags & B_VALID)) sd_rw(b);
     return b;
 }
 
@@ -88,8 +86,7 @@ bwrite(struct buf* b)
 {
     if (!holding(&b->lock)) panic("\tbwrite: buf not locked.\n");
     b->flags |= B_DIRTY;
-    // TODO:Limplement io_disk_rw (write)
-    // io_disk_rw(b, 1);
+    sd_rw(b);
 }
 
 /*

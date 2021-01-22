@@ -19,7 +19,7 @@ struct buf {
     uint32_t blockno;      // block number
     uint8_t data[BSIZE];   // storing data
     uint32_t refcnt;       // the number of waiting devices
-    struct spinlock lock;  // when locked, waiting for driver to wake it up
+    struct spinlock lock;  // when locked, waiting for driver to release
     struct buf* prev;      // less recent buffer
     struct buf* next;      // more recent buffer
 };
@@ -109,7 +109,7 @@ bget(uint32_t dev, uint32_t blockno)
 }
 ```
 
-随后，我们调用函数 `bread` 对这个 `buf` 进行读操作。由于目前我们还未实现文件系统，因此暂时不做实际的 I/O 操作。
+随后，我们调用函数 `bread` 对这个 `buf` 进行读操作。这里函数 `sd_rw` 负责 SD 卡的读写操作，详情将在之后提到。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -121,15 +121,12 @@ struct buf*
 bread(uint32_t dev, uint32_t blockno)
 {
     struct buf* b = bget(dev, blockno);
-    if (!(b->flags & B_VALID)) {
-        // TODO:Limplement io_disk_rw (read)
-        // io_disk_rw(b, 0);
-    }
+    if (!(b->flags & B_VALID)) sd_rw(b);
     return b;
 }
 ```
 
-当我们需要进行写操作时，我们调用函数 `bwrite` 对这个 `buf` 进行写操作。同理，我们暂时不做实际的 I/O 操作。
+当我们需要进行写操作时，我们调用函数 `bwrite` 对这个 `buf` 进行写操作。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -142,8 +139,7 @@ bwrite(struct buf* b)
 {
     if (!holding(&b->lock)) panic("\tbwrite: buf not locked.\n");
     b->flags |= B_DIRTY;
-    // TODO:Limplement io_disk_rw (write)
-    // io_disk_rw(b, 1);
+    sd_rw(b);
 }
 ```
 
@@ -332,7 +328,6 @@ _sd_start(struct buf* b)
 void
 sd_rw(struct buf* b)
 {
-    acquire(&b->lock);
     _sd_start(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;

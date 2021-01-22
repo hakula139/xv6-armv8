@@ -17,7 +17,7 @@ struct buf {
     uint32_t blockno;      // block number
     uint8_t data[BSIZE];   // storing data
     uint32_t refcnt;       // the number of waiting devices
-    struct spinlock lock;  // when locked, waiting for driver to wake it up
+    struct spinlock lock;  // when locked, waiting for driver to release
     struct buf* prev;      // less recent buffer
     struct buf* next;      // more recent buffer
 };

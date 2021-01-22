@@ -641,15 +641,12 @@ _sd_start(struct buf* b)
 void
 sd_intr()
 {
-    /* TODO: Your code here. */
-
-    /* Hint: Example pseudocode is provided as below. */
-
-    /*
-    acquire(&sdlock);
+    acquire(&bcache);
     if (list_empty(&sdque)) {
-        cprintf("sd receive redundent interrupt 0x%x, omitted.\n",
-    *EMMC_INTERRUPT); } else { int i = *EMMC_INTERRUPT;
+        cprintf(
+            "sd receive redundent interrupt 0x%x, omitted.\n", *EMMC_INTERRUPT);
+    } else {
+        int i = *EMMC_INTERRUPT;
 
         // FIXME: Restart when failed
         asserts((i & INT_DATA_DONE) || (i & INT_READ_RDY), "unexpected sd
@@ -666,9 +663,8 @@ sd_intr()
             cprintf("sd intr unexpected: 0x%x, restarted.\n", i);
         } else {
             if (!write) {
-                uint32_t *intbuf = (uint32_t *)b->data;
-                for (int done = 0; done < 128; )
-                    intbuf[done++] = *EMMC_DATA;
+                uint32_t* intbuf = (uint32_t*)b->data;
+                for (int done = 0; done < 128;) intbuf[done++] = *EMMC_DATA;
                 _sd_wait_for_interrupt(INT_DATA_DONE);
             }
 
@@ -677,12 +673,10 @@ sd_intr()
             wakeup(b);
 
             list_pop_front(&sdque);
-            if (!list_empty(&sdque))
-                _sd_start(list_front(&sdque));
+            if (!list_empty(&sdque)) _sd_start(list_front(&sdque));
         }
     }
     release(&sdlock);
-    */
 }
 
 /*
@@ -693,7 +687,6 @@ sd_intr()
 void
 sd_rw(struct buf* b)
 {
-    acquire(&b->lock);
     _sd_start(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
