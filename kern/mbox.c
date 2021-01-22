@@ -31,7 +31,7 @@ mbox_read(uint8_t chan)
         disb();
         uint32_t r = *MBOX_READ;
         if ((r & 0xF) == chan) {
-            cprintf("- mbox_read: 0x%x\n", r);
+            cprintf("- mbox read: 0x%x\n", r);
             return r >> 4;
         }
     }
@@ -90,7 +90,7 @@ mbox_get_clock_rate()
     dccivac(buf, sizeof(buf));
     disb();
 
-    cprintf("- clock rate %d\n", buf[6]);
+    cprintf("- clock rate: %d\n", buf[6]);
     return buf[6];
 }
 

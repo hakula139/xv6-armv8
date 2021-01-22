@@ -323,10 +323,10 @@ static EmmcCommand sd_command_table[] = {
 #define IX_SET_CLR_DET      37
 #define IX_SEND_SCR         38
 
-static const char* STATUS_NAME[] = {
-    "idle", "ready",   "identify", "standby", "transmit",
-    "data", "receive", "prog",     "dis",
-};
+// static const char* STATUS_NAME[] = {
+//     "idle", "ready",   "identify", "standby", "transmit",
+//     "data", "receive", "prog",     "dis",
+// };
 
 // CSD flags
 // Note: all flags are shifted down by 8 bits as the CRC is not included.
@@ -527,10 +527,10 @@ _parse_partition_entry(uint8_t* entry, int id)
     cprintf("  head=%d, sector=%d, cylinder=%d\n", head, sector, cylinder);
 
     uint32_t lba = _parse_uint32_t(&entry[8]);
-    cprintf("- LBA of first absolute sector: 0x%x", lba);
+    cprintf("- LBA of first absolute sector: 0x%x\n", lba);
 
     uint32_t sectorno = _parse_uint32_t(&entry[12]);
-    cprintf("- Number of sectors: %d", sectorno);
+    cprintf("- Number of sectors: %d\n", sectorno);
 }
 
 /*
@@ -647,7 +647,7 @@ sd_intr()
 {
     int i = *EMMC_INTERRUPT;
     if (!(i & INT_DATA_DONE)) {
-        cprintf("\tsd_intr: Unexpected SD interrupt.\n");
+        cprintf("\tsd_intr: Unexpected SD interrupt: %d\n", i);
         return;
     }
     *EMMC_INTERRUPT = i;  // Clear interrupt
@@ -664,7 +664,6 @@ sd_rw(struct buf* b)
 {
     acquire(&b->lock);
     _sd_start(b);
-    sd_intr(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
     brelease(b);
@@ -1147,9 +1146,7 @@ sd_get_clock_divider(uint32_t freq)
         shiftcount = 0;  // Match shift to above just for debug notification
     }
 
-    cprintf(
-        "sd_get_clock_divider: Divisor selected = %u, pow 2 shift count = %u\n",
-        divisor, shiftcount);
+    cprintf("- Divisor selected = %u, shift count = %u\n", divisor, shiftcount);
     uint32_t hi = 0;
     if (sd_host_ver > HOST_SPEC_V2)
         hi = (divisor & 0x300) >> 2;  // Only 10 bits on Hosts specs above 2
@@ -1215,7 +1212,7 @@ sd_reset_card(int reset_type)
     count = 10000;
     while ((*EMMC_CONTROL1 & reset_type) && count--) _sd_delayus(10);
     if (count <= 0) {
-        cprintf("\tsd_reset_card: EMMC: ERROR: failed to reset.\n");
+        cprintf("\tEMMC ERROR: failed to reset.\n");
         return SD_ERROR_RESET;
     }
 
@@ -1248,7 +1245,7 @@ sd_reset_card(int reset_type)
     sd_card.uhsi = 0;
 
     // Send GO_IDLE_STATE
-    cprintf("sd_reset_card: Send IX_GO_IDLE_STATE command.\n");
+    cprintf("- Send IX_GO_IDLE_STATE command.\n");
     resp = _sd_send_command(IX_GO_IDLE_STATE);
 
     return resp;
