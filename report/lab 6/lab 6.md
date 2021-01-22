@@ -305,7 +305,6 @@ _sd_start(struct buf* b)
         !*EMMC_INTERRUPT,
         "\tEMMC ERROR: Interrupt flag should be empty: 0x%x.\n",
         *EMMC_INTERRUPT);
-    disb();
 
     *EMMC_BLKSIZECNT = BSIZE;
 
@@ -450,7 +449,7 @@ sd_init()
     }
 
     uint8_t* ending = mbr.data + 0x1FE;
-    cprintf("- Boot signature: %x %x\n", ending[0], ending[1]);
+    cprintf("sd_init: Boot signature: %x %x\n", ending[0], ending[1]);
     asserts(ending[0] == 0x55 && ending[1] == 0xAA, "\tMBR is not valid.\n");
 
     cprintf("sd_init: success.\n");
@@ -547,6 +546,85 @@ main()
 > 请在 `sd_init` 中解析 MBR 获得第二分区起始块的 LBA 和分区大小以便后续使用。
 
 见 2.2.3 节。由于暂时不知道要以何种形式用到这些信息，我们暂时不做函数返回之类的处理，而只是将相关信息直接输出到终端。
+
+## 运行结果
+
+```bash
+> make qemu
+```
+
+```text
+console_init: success.
+main: [CPU 0] init started.
+alloc_init: success.
+proc_init: success.
+irq_init: success.
+timer_init: success at CPU 0.
+proc_alloc: proc 1 success.
+user_init: proc 1 (initproc) success.
+- mbox write: 0x7fd38
+- mbox read: 0x7fd38
+- clock rate: 50000000
+- SD base clock rate from mailbox: 50000000
+- Reset the card.
+- Divisor selected = 104, shift count = 6
+- EMMC: Set clock, status 0x1ff0000 CONTROL1: 0xe6807
+- Send IX_GO_IDLE_STATE command.
+- Send command response: 0
+- EMMC: Sending ACMD41 SEND_OP_COND status 1ff0000
+- Divisor selected = 2, shift count = 0
+- EMMC: Set clock, status 0x1ff0000 CONTROL1: 0xe0207
+- EMMC: SD Card Type 2 SC 128Mb UHS-I 0 mfr 170 'XY:QEMU!' r0.1 2/2006, #deadbeef RCA 4567
+sd_init: Partition 1: 00 20 21 00 0c 49 01 08 00 08 00 00 00 00 02 00 
+- Status: 0
+- CHS address of first absolute sector: head=32, sector=33, cylinder=0
+- Partition type: 12
+- CHS address of last absolute sector: head=73, sector=1, cylinder=8
+- LBA of first absolute sector: 0x800
+- Number of sectors: 131072
+sd_init: Partition 2: 00 49 02 08 83 51 01 10 00 08 02 00 00 f8 01 00 
+- Status: 0
+- CHS address of first absolute sector: head=73, sector=2, cylinder=8
+- Partition type: 131
+- CHS address of last absolute sector: head=81, sector=1, cylinder=16
+- LBA of first absolute sector: 0x20800
+- Number of sectors: 129024
+sd_init: Partition 3: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+- Status: 0
+- CHS address of first absolute sector: head=0, sector=0, cylinder=0
+- Partition type: 0
+- CHS address of last absolute sector: head=0, sector=0, cylinder=0
+- LBA of first absolute sector: 0x0
+- Number of sectors: 0
+sd_init: Partition 4: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+- Status: 0
+- CHS address of first absolute sector: head=0, sector=0, cylinder=0
+- Partition type: 0
+- CHS address of last absolute sector: head=0, sector=0, cylinder=0
+- LBA of first absolute sector: 0x0
+- Number of sectors: 0
+sd_init: Boot signature: 55 aa
+sd_init: success.
+sd_test: begin nblocks 2048
+sd_test: sd check rw...
+sd_test: read 1048576 B (1 MB), t: 58641006 cycles, speed: 1.0 MB/s
+sd_test: write 1048576 B (1 MB), t: 63637462 cycles, speed: 0.9 MB/s
+main: [CPU 0] init success.
+main: [CPU 3] init started.
+main: [CPU 2] init started.
+timer_init: success at CPU 3.
+main: [CPU 1] init started.
+main: [CPU 3] init success.
+timer_init: success at CPU 2.
+main: [CPU 2] init success.
+timer_init: success at CPU 1.
+scheduler: switch to proc 1 at CPU 3.
+main: [CPU 1] init success.
+syscall: proc 1 calls syscall 0.
+sys_exec: executing /init with parameters: /init 
+syscall: proc 1 calls syscall 1.
+sys_exit: in exit.
+```
 
 ## 测试环境
 
