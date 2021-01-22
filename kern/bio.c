@@ -1,6 +1,8 @@
 #include "buf.h"
+#include "console.h"
 #include "sd.h"
 #include "spinlock.h"
+#include "string.h"
 #include "types.h"
 
 struct {
@@ -65,6 +67,7 @@ bget(uint32_t dev, uint32_t blockno)
     }
 
     panic("\tbget: no buffers.\n");
+    return NULL;
 }
 
 /*

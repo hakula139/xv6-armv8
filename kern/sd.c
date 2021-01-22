@@ -611,7 +611,7 @@ _sd_start(struct buf* b)
 
     uint32_t* intbuf = (uint32_t*)b->data;
     asserts(
-        !((uint32_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
+        !((uint64_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
 
     if (write) {
         resp = _sd_wait_for_interrupt(INT_WRITE_RDY);
@@ -1472,10 +1472,11 @@ _sd_init()
     // From now on the card should be in standby state.
     // Actually cards seem to respond in identify state at this point.
     // Check this with a SEND_STATUS (CMD13)
-    // if( (resp = _sd_send_command(IX_SEND_STATUS))) return
-    // sd_debug_response(resp);
-    //  printf("Card current state: %08x
-    //  %s\n",sd_card.status,STATUS_NAME[sd_card.card_state]);
+    // if ((resp = _sd_send_command(IX_SEND_STATUS)))
+    //     return sd_debug_response(resp);
+    // printf(
+    //     "Card current state: %08x%s\n", sd_card.status,
+    //     STATUS_NAME[sd_card.card_state]);
 
     // Send SEND_CSD (CMD9) and parse the result.
     if ((resp = _sd_send_command(IX_SEND_CSD))) return sd_debug_response(resp);

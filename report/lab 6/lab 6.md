@@ -314,7 +314,7 @@ _sd_start(struct buf* b)
 
     uint32_t* intbuf = (uint32_t*)b->data;
     asserts(
-        !((uint32_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
+        !((uint64_t)b->data & 0x3), "\tOnly support word-aligned buffers.\n");
 
     if (write) {
         resp = _sd_wait_for_interrupt(INT_WRITE_RDY);
