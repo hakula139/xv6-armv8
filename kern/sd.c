@@ -8,6 +8,7 @@
 #include "peripherals/gpio.h"
 #include "peripherals/mbox.h"
 #include "proc.h"
+#include "sleeplock.h"
 #include "string.h"
 
 // Private functions
@@ -664,11 +665,11 @@ sd_intr()
 void
 sd_rw(struct buf* b)
 {
-    acquire(&b->lock);
+    acquiresleep(&b->lock);
     _sd_start(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
-    brelease(b);
+    brelse(b);
 }
 
 /* SD card test and benchmark. */
