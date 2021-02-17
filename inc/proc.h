@@ -1,7 +1,7 @@
 #ifndef INC_PROC_H_
 #define INC_PROC_H_
 
-#include <stdint.h>
+#include <stddef.h>
 
 #include "arm.h"
 #include "spinlock.h"
@@ -9,6 +9,7 @@
 
 #define NCPU       4    /* maximum number of CPUs */
 #define NPROC      64   /* maximum number of processes */
+#define NOFILE     16   /* open files per process */
 #define KSTACKSIZE 4096 /* size of per-process kernel stack */
 
 #define thiscpu (&cpus[cpuid()])
@@ -54,13 +55,21 @@ struct proc {
     struct proc* parent;  // Parent process
 
     // no lock needs to be held when using these:
-    char* kstack;             // Bottom of kernel stack for this process
-    uint64_t sz;              // Size of process memory (bytes)
-    uint64_t* pgdir;          // Page table
-    struct trapframe* tf;     // Trapframe for current syscall
-    struct context* context;  // swtch() here to run process
-    char name[16];            // Process name (debugging)
+    char* kstack;                // Bottom of kernel stack for this process
+    uint64_t sz;                 // Size of process memory (bytes)
+    uint64_t* pgdir;             // Page table
+    struct trapframe* tf;        // Trapframe for current syscall
+    struct context* context;     // swtch() here to run process
+    struct file* ofile[NOFILE];  // Open files
+    struct inode* cwd;           // Current directory
+    char name[16];               // Process name (debugging)
 };
+
+static inline struct proc*
+thisproc()
+{
+    return thiscpu->proc;
+}
 
 void proc_init();
 void user_init();
@@ -68,6 +77,8 @@ void scheduler();
 void yield();
 void exit(int);
 void sleep(void*, struct spinlock*);
+int fork();
+int wait();
 void wakeup(void*);
 
 #endif  // INC_PROC_H_

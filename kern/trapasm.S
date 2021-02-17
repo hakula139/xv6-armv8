@@ -24,6 +24,14 @@ alltraps:
     stp x3, x0, [sp, #-16]!
     stp x1, x2, [sp, #-16]!
 
+    /*
+     * Save Q0 and TPIDR_EL0 to placate musl such as
+     * - `str q0, [sp, #-16]!`
+     * - `mrs x12, tpidr_el0` and then push to stack
+     */
+
+    /* TODO: Your code here. */
+
     /* Call trap(struct trapframe*). */
     mov x0, sp
     bl  trap
@@ -53,6 +61,10 @@ trapret:
     ldp x25, x26, [sp], #16
     ldp x27, x28, [sp], #16
     ldp x29, x30, [sp], #16
+
+    /* Restore Q0 and TPIDR_EL0. */
+
+    /* TODO: Your code here. */
 
     eret
 

@@ -216,20 +216,6 @@ sched()
 }
 
 /*
- * Give up the CPU for one scheduling round.
- */
-void
-yield()
-{
-    struct proc* p = thiscpu->proc;
-    acquire(&p->lock);
-    p->state = RUNNABLE;
-    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
-    sched();
-    release(&p->lock);
-}
-
-/*
  * A fork child's very first scheduling by scheduler()
  * will swtch to forkret. "Return" to user space.
  */
@@ -334,4 +320,50 @@ wakeup(void* chan)
             release(&p->lock);
         }
     }
+}
+
+/*
+ * Give up the CPU for one scheduling round.
+ */
+void
+yield()
+{
+    struct proc* p = thiscpu->proc;
+    acquire(&p->lock);
+    p->state = RUNNABLE;
+    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
+    sched();
+    release(&p->lock);
+}
+
+/*
+ * Create a new process copying p as the parent.
+ * Sets up stack to return as if from system call.
+ * Caller must set state of returned proc to RUNNABLE.
+ */
+int
+fork()
+{
+    /* TODO: Your code here. */
+}
+
+/*
+ * Wait for a child process to exit and return its pid.
+ * Return -1 if this process has no children.
+ */
+int
+wait()
+{
+    /* TODO: Your code here. */
+}
+
+/*
+ * Print a process listing to console.  For debugging.
+ * Runs when user types ^P on console.
+ * No lock to avoid wedging a stuck machine further.
+ */
+void
+procdump()
+{
+    panic("unimplemented");
 }
