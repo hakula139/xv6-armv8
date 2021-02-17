@@ -48,7 +48,7 @@ binit()
     for (struct buf* b = bcache.buf; b < bcache.buf + NBUF; ++b) {
         b->next = bcache.head.next;
         b->prev = &bcache.head;
-        initlock(&b->lock, "buffer");
+        initsleeplock(&b->lock, "buffer");
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
@@ -69,7 +69,7 @@ bget(uint32_t dev, uint32_t blockno)
         if (b->dev == dev && b->blockno == blockno) {
             b->refcnt++;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -83,7 +83,7 @@ bget(uint32_t dev, uint32_t blockno)
             b->flags = 0;
             b->refcnt = 1;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -109,7 +109,7 @@ bread(uint32_t dev, uint32_t blockno)
 void
 bwrite(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbwrite: buf not locked.\n");
+    if (!holdingsleep(&b->lock)) panic("\tbwrite: buf not locked.\n");
     b->flags |= B_DIRTY;
     sd_rw(b);
 }
@@ -119,10 +119,10 @@ bwrite(struct buf* b)
  * Move to the head of the most-recently-used list.
  */
 void
-brelease(struct buf* b)
+brelse(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbrelease: buffer not locked.\n");
-    release(&b->lock);
+    if (!holdingsleep(&b->lock)) panic("\tbrelse: buffer not locked.\n");
+    releasesleep(&b->lock);
 
     acquire(&bcache.lock);
     b->refcnt--;
