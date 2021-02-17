@@ -1,11 +1,3 @@
-#include "buf.h"
-#include "console.h"
-#include "fs.h"
-#include "sleeplock.h"
-#include "spinlock.h"
-#include "string.h"
-#include "types.h"
-
 /*
  * Simple logging that allows concurrent FS system calls.
  *
@@ -30,6 +22,14 @@
  *   ...
  * Log appends are synchronous.
  */
+
+#include "buf.h"
+#include "console.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "spinlock.h"
+#include "string.h"
+#include "types.h"
 
 /*
  * Contents of the header block, used for both the on-disk header block

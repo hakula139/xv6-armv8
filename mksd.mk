@@ -37,4 +37,3 @@ $(SD_IMG): $(BOOT_IMG) $(FS_IMG)
 	" | sfdisk $@
 	dd if=$(BOOT_IMG) of=$@ seek=$(BOOT_OFFSET) conv=notrunc
 	dd if=$(FS_IMG) of=$@ seek=$(FS_OFFSET) conv=notrunc
-
