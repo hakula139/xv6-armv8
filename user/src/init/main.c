@@ -1,11 +1,11 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fcntl.h>
 
-#include <unistd.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
-char *argv[] = { "sh", 0 };
+char* argv[] = {"sh", 0};
 
 int
 main()
@@ -31,8 +31,9 @@ main()
             printf("init: exec sh failed\n");
             exit(1);
         }
-        while ((wpid = wait(NULL)) >= 0 && wpid != pid)
-            printf("zombie!\n");
+        while ((wpid = wait(NULL)) >= 0 && wpid != pid) {
+            printf("init: zombie!\n");
+        }
     }
 
     return 0;

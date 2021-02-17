@@ -1,8 +1,8 @@
-#ifndef INC_SLEEPLOCK_H
-#define INC_SLEEPLOCK_H
+#ifndef INC_SLEEPLOCK_H_
+#define INC_SLEEPLOCK_H_
 
-#include "spinlock.h"
 #include "proc.h"
+#include "spinlock.h"
 
 /* Long-term locks for processes */
 struct sleeplock {
@@ -11,8 +11,9 @@ struct sleeplock {
     int pid;
 };
 
-void initsleeplock(struct sleeplock *lk, char *name);
-void acquiresleep(struct sleeplock *lk);
-void releasesleep(struct sleeplock *lk);
-int holdingsleep(struct sleeplock *lk);
-#endif
+void initsleeplock(struct sleeplock* lk, char* name);
+void acquiresleep(struct sleeplock* lk);
+void releasesleep(struct sleeplock* lk);
+int holdingsleep(struct sleeplock* lk);
+
+#endif  // INC_SLEEPLOCK_H_

@@ -1,18 +1,16 @@
 #include <elf.h>
 
-#include "trap.h"
-
+#include "console.h"
 #include "file.h"
 #include "log.h"
-#include "string.h"
-
-#include "console.h"
-#include "vm.h"
-#include "proc.h"
 #include "memlayout.h"
+#include "proc.h"
+#include "string.h"
+#include "trap.h"
+#include "vm.h"
 
 int
-execve(const char *path, char *const argv[], char *const envp[])
+execve(const char* path, char* const argv[], char* const envp[])
 {
     /* TODO: Load program into memory. */
 
@@ -23,7 +21,7 @@ execve(const char *path, char *const argv[], char *const envp[])
      * The initial stack is like
      *
      *   +-------------+
-     *   | auxv[o] = 0 | 
+     *   | auxv[o] = 0 |
      *   +-------------+
      *   |    ....     |
      *   +-------------+
@@ -48,7 +46,7 @@ execve(const char *path, char *const argv[], char *const envp[])
      * called auxiliary vectors, which are used to transfer certain
      * kernel level information to the user processes.
      *
-     * ## Example 
+     * ## Example
      *
      * ```
      * sp -= 8; *(size_t *)sp = AT_NULL;
@@ -71,6 +69,4 @@ execve(const char *path, char *const argv[], char *const envp[])
      * ```
      *
      */
-
 }
-

@@ -26,7 +26,7 @@ struct buf {
 void binit();
 struct buf* bread(uint32_t, uint32_t);
 void bwrite(struct buf*);
-void brelease(struct buf*);
+void brelse(struct buf*);
 void bpin(struct buf*);
 void bunpin(struct buf*);
 

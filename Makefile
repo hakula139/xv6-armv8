@@ -5,10 +5,6 @@ LD := $(CROSS)ld
 OBJDUMP := $(CROSS)objdump
 OBJCOPY := $(CROSS)objcopy
 
-
-COPY := cp -f
-
-
 COPY := cp -f
 
 # -fno-pie -fno-pic:

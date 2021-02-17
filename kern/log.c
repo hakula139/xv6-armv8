@@ -1,12 +1,13 @@
-#include "types.h"
-#include "console.h"
-#include "spinlock.h"
-#include "sleeplock.h"
-#include "fs.h"
 #include "buf.h"
+#include "console.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "spinlock.h"
 #include "string.h"
+#include "types.h"
 
-/* Simple logging that allows concurrent FS system calls.
+/*
+ * Simple logging that allows concurrent FS system calls.
  *
  * A log transaction contains the updates of multiple FS system
  * calls. The logging system only commits when there are
@@ -43,8 +44,8 @@ struct log {
     struct spinlock lock;
     int start;
     int size;
-    int outstanding;    // How many FS sys calls are executing.
-    int committing;     // In commit(), please wait.
+    int outstanding;  // How many FS sys calls are executing.
+    int committing;   // In commit(), please wait.
     int dev;
     struct logheader lh;
 };
@@ -81,13 +82,11 @@ read_head()
 static void
 write_head()
 {
-    struct buf *buf = bread(log.dev, log.start);
-    struct logheader *hb = (struct logheader *) (buf->data);
+    struct buf* buf = bread(log.dev, log.start);
+    struct logheader* hb = (struct logheader*)(buf->data);
     int i;
     hb->n = log.lh.n;
-    for (i = 0; i < log.lh.n; i++) {
-        hb->block[i] = log.lh.block[i];
-    }
+    for (i = 0; i < log.lh.n; i++) { hb->block[i] = log.lh.block[i]; }
     bwrite(buf);
     brelse(buf);
 }
@@ -139,8 +138,7 @@ commit()
  *   brelse(bp)
  */
 void
-log_write(struct buf *b)
+log_write(struct buf* b)
 {
     /* TODO: Your code here. */
 }
-

@@ -152,7 +152,7 @@ static struct inode* iget(uint32_t dev, uint32_t inum);
  * Returns an unlocked but allocated and referenced inode.
  */
 struct inode*
-ialloc(uint32_t dev, short type)
+ialloc(uint32_t dev, uint16_t type)
 {
     /* TODO: Your code here. */
 }
