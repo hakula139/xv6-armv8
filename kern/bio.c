@@ -1,9 +1,31 @@
+/*
+ * Buffer cache.
+ *
+ * The buffer cache is a linked list of buf structures holding
+ * cached copies of disk block contents.  Caching disk blocks
+ * in memory reduces the number of disk reads and also provides
+ * a synchronization point for disk blocks used by multiple processes.
+ *
+ * Interface:
+ *   To get a buffer for a particular disk block, call bread.
+ *   After changing buffer data, call bwrite to write it to disk.
+ *   When done with the buffer, call brelse.
+ *   Do not use the buffer after calling brelse.
+ *   Only one process at a time can use a buffer, so do not keep them longer
+ *     than necessary.
+ *
+ * The implementation uses two state flags internally:
+ *   B_VALID: the buffer data has been read from the disk.
+ *   B_DIRTY: the buffer data has been modified
+ *     and needs to be written to disk.
+ */
+
 #include "buf.h"
 #include "console.h"
 #include "sd.h"
+#include "sleeplock.h"
 #include "spinlock.h"
 #include "string.h"
-#include "types.h"
 
 struct {
     struct spinlock lock;
@@ -26,7 +48,7 @@ binit()
     for (struct buf* b = bcache.buf; b < bcache.buf + NBUF; ++b) {
         b->next = bcache.head.next;
         b->prev = &bcache.head;
-        initlock(&b->lock, "buffer");
+        initsleeplock(&b->lock, "buffer");
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
@@ -47,7 +69,7 @@ bget(uint32_t dev, uint32_t blockno)
         if (b->dev == dev && b->blockno == blockno) {
             b->refcnt++;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -61,7 +83,7 @@ bget(uint32_t dev, uint32_t blockno)
             b->flags = 0;
             b->refcnt = 1;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -87,7 +109,7 @@ bread(uint32_t dev, uint32_t blockno)
 void
 bwrite(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbwrite: buf not locked.\n");
+    if (!holdingsleep(&b->lock)) panic("\tbwrite: buf not locked.\n");
     b->flags |= B_DIRTY;
     sd_rw(b);
 }
@@ -97,10 +119,10 @@ bwrite(struct buf* b)
  * Move to the head of the most-recently-used list.
  */
 void
-brelease(struct buf* b)
+brelse(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbrelease: buffer not locked.\n");
-    release(&b->lock);
+    if (!holdingsleep(&b->lock)) panic("\tbrelse: buffer not locked.\n");
+    releasesleep(&b->lock);
 
     acquire(&bcache.lock);
     b->refcnt--;

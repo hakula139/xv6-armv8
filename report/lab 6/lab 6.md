@@ -15,13 +15,13 @@
 
 struct buf {
     int flags;
-    uint32_t dev;          // device
-    uint32_t blockno;      // block number
-    uint8_t data[BSIZE];   // storing data
-    uint32_t refcnt;       // the number of waiting devices
-    struct spinlock lock;  // when locked, waiting for driver to release
-    struct buf* prev;      // less recent buffer
-    struct buf* next;      // more recent buffer
+    uint32_t dev;           // device
+    uint32_t blockno;       // block number
+    uint8_t data[BSIZE];    // storing data
+    uint32_t refcnt;        // the number of waiting devices
+    struct sleeplock lock;  // when locked, waiting for driver to release
+    struct buf* prev;       // less recent buffer
+    struct buf* next;       // more recent buffer
 };
 ```
 
@@ -59,7 +59,7 @@ binit()
     for (struct buf* b = bcache.buf; b < bcache.buf + NBUF; ++b) {
         b->next = bcache.head.next;
         b->prev = &bcache.head;
-        initlock(&b->lock, "buffer");
+        initsleeplock(&b->lock, "buffer");
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
@@ -86,7 +86,7 @@ bget(uint32_t dev, uint32_t blockno)
         if (b->dev == dev && b->blockno == blockno) {
             b->refcnt++;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -100,7 +100,7 @@ bget(uint32_t dev, uint32_t blockno)
             b->flags = 0;
             b->refcnt = 1;
             release(&bcache.lock);
-            acquire(&b->lock);
+            acquiresleep(&b->lock);
             return b;
         }
     }
@@ -137,13 +137,13 @@ bread(uint32_t dev, uint32_t blockno)
 void
 bwrite(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbwrite: buf not locked.\n");
+    if (!holdingsleep(&b->lock)) panic("\tbwrite: buf not locked.\n");
     b->flags |= B_DIRTY;
     sd_rw(b);
 }
 ```
 
-最后，当我们需要释放一个 `buf` 时，我们调用函数 `brelease` 将它的 `refcnt` 减 `1`。如果此时 `refcnt` 的值为 `0`，说明已经没有设备在等待这个 `buf` 了，那么我们就将这个 `buf` 移动到 `bcache` 的头部（实际是 `head->next`），表示这是一个最晚使用过的（Most Recently Used, MRU）`buf`。
+最后，当我们需要释放一个 `buf` 时，我们调用函数 `brelse` 将它的 `refcnt` 减 `1`。如果此时 `refcnt` 的值为 `0`，说明已经没有设备在等待这个 `buf` 了，那么我们就将这个 `buf` 移动到 `bcache` 的头部（实际是 `head->next`），表示这是一个最晚使用过的（Most Recently Used, MRU）`buf`。
 
 ```c {.line-numbers}
 // kern/bio.c
@@ -153,10 +153,10 @@ bwrite(struct buf* b)
  * Move to the head of the most-recently-used list.
  */
 void
-brelease(struct buf* b)
+brelse(struct buf* b)
 {
-    if (!holding(&b->lock)) panic("\tbrelease: buffer not locked.\n");
-    release(&b->lock);
+    if (!holdingsleep(&b->lock)) panic("\tbrelse: buffer not locked.\n");
+    releasesleep(&b->lock);
 
     acquire(&bcache.lock);
     b->refcnt--;
@@ -342,7 +342,7 @@ _sd_start(struct buf* b)
 }
 ```
 
-在函数 `sd_rw` 里，我们先调用函数 `_sd_start` 对 `buf` 进行 I/O 操作，然后将其 `flags` 的 `B_DIRTY` 位设置为 `0`、`B_VALID` 位设置为 `1`，最后调用函数 `brelease` 释放 `buf`（见 1.1 节）。
+在函数 `sd_rw` 里，我们先调用函数 `_sd_start` 对 `buf` 进行 I/O 操作，然后将其 `flags` 的 `B_DIRTY` 位设置为 `0`、`B_VALID` 位设置为 `1`，最后调用函数 `brelse` 释放 `buf`（见 1.1 节）。
 
 ```c {.line-numbers}
 // kern/sd.c
@@ -355,11 +355,11 @@ _sd_start(struct buf* b)
 void
 sd_rw(struct buf* b)
 {
-    acquire(&b->lock);
+    acquiresleep(&b->lock);
     _sd_start(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
-    brelease(b);
+    brelse(b);
 }
 ```
 
@@ -394,7 +394,7 @@ sd_intr()
 4. 不需要判断请求类型，并据此判断中断是否合法，原因同 2.
 5. 不需要将数据读取到 `buf->data`，原因同 2.
 6. 不需要设置 `buf->flags`，因为我们在函数 `sd_rw` 里完成了这项操作
-7. 不需要唤醒 `buf`，因为我们在函数 `brelease` 里完成了这项操作
+7. 不需要唤醒 `buf`，因为我们在函数 `brelse` 里完成了这项操作
 8. 不知道是否需要继续进行下一个 `buf` 的读写操作，因为测试代码里似乎没有对函数 `sd_intr` 的测试，我不清楚文件系统里会怎么调用这个 `sd_intr`
    - 毕竟文件系统是我自己设计的，而我大概不太会采用样例里的这个中断处理逻辑
    - 目前我的 `bcache` 不需要手动维护其结构，如果需要一个清空 `buf` 队列的操作（我猜 `sd_intr` 可能想干这个事情），到时候我可以直接在 `bcache` 提供一个方法 `bclear`，思路是循环调用 `sd_rw`，并不需要让 `sd_intr` 去处理这个事情
@@ -607,8 +607,8 @@ sd_init: Boot signature: 55 aa
 sd_init: success.
 sd_test: begin nblocks 2048
 sd_test: sd check rw...
-sd_test: read 1048576 B (1 MB), t: 58641006 cycles, speed: 1.0 MB/s
-sd_test: write 1048576 B (1 MB), t: 63637462 cycles, speed: 0.9 MB/s
+sd_test: read 1048576 B (1 MB), t: 206934768 cycles, speed: 0.3 MB/s
+sd_test: write 1048576 B (1 MB), t: 238090587 cycles, speed: 0.2 MB/s
 main: [CPU 0] init success.
 main: [CPU 3] init started.
 main: [CPU 2] init started.
