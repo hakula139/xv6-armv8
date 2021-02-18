@@ -77,4 +77,6 @@ struct dirent {
 #define T_FILE 2  // File
 #define T_DEV  3  // Device
 
+void readsb(int, struct superblock*);
+
 #endif  // INC_FS_H_
