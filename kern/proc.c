@@ -222,7 +222,7 @@ sched()
 void
 forkret()
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
 
     // Still holding p->lock from scheduler.
     release(&p->lock);
@@ -251,7 +251,7 @@ reparent(struct proc* p)
 void
 exit(int status)
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
 
     // Temporarily disabled before user processes are implemented.
     // if (p == initproc) panic("\texit: initproc exiting.\n");
@@ -279,7 +279,7 @@ exit(int status)
 void
 sleep(void* chan, struct spinlock* lk)
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
 
     // Must acquire p->lock in order to
     // change p->state and then call sched.
@@ -312,7 +312,7 @@ void
 wakeup(void* chan)
 {
     for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
-        if (p != thiscpu->proc) {
+        if (p != thisproc()) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
                 p->state = RUNNABLE;
@@ -328,7 +328,7 @@ wakeup(void* chan)
 void
 yield()
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
     acquire(&p->lock);
     p->state = RUNNABLE;
     cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());

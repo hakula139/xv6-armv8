@@ -25,7 +25,7 @@ irq_init()
 void
 trap(struct trapframe* tf)
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
     int src = get32(IRQ_SRC_CORE(cpuid()));
     int bad = 0;
 

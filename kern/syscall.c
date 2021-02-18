@@ -15,7 +15,7 @@
 int
 fetchint(uint64_t addr, int64_t* ip)
 {
-    struct proc* proc = thiscpu->proc;
+    struct proc* proc = thisproc();
 
     if (addr >= proc->sz || addr + 8 > proc->sz) { return -1; }
     *ip = *(int64_t*)(addr);
@@ -31,7 +31,7 @@ int
 fetchstr(uint64_t addr, char** pp)
 {
     char *s, *ep;
-    struct proc* proc = thiscpu->proc;
+    struct proc* proc = thisproc();
 
     if (addr >= proc->sz) { return -1; }
 
@@ -55,7 +55,7 @@ argint(int n, uint64_t* ip)
 {
     if (n > 3) panic("\targint: too many system call parameters.\n");
 
-    struct proc* proc = thiscpu->proc;
+    struct proc* proc = thisproc();
 
     // *ip = *(&proc->tf->x1 + n);
 
@@ -74,7 +74,7 @@ argptr(int n, char** pp, int size)
 
     if (argint(n, &i) < 0) { return -1; }
 
-    struct proc* proc = thiscpu->proc;
+    struct proc* proc = thisproc();
 
     if ((uint64_t)i >= proc->sz || (uint64_t)i + size > proc->sz) { return -1; }
 
@@ -109,7 +109,7 @@ static int (*syscalls[])() = {
 int
 syscall()
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
     int num = p->tf->x0;
     if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
         cprintf("syscall: proc %d calls syscall %d.\n", p->pid, num);
