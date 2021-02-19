@@ -33,7 +33,7 @@
 
 /*
  * Contents of the header block, used for both the on-disk header block
- * and to keep track in memory of logged block# before commit.
+ * and to keep track in memory of logged block # before commit.
  */
 struct logheader {
     int n;
@@ -108,7 +108,7 @@ write_head()
     struct buf* buf = bread(log.dev, log.start);
     struct logheader* lh = (struct logheader*)(buf->data);
     lh->n = log.lh.n;
-    for (int i = 0; i < log.lh.n; i++) lh->block[i] = log.lh.block[i];
+    for (int i = 0; i < log.lh.n; ++i) lh->block[i] = log.lh.block[i];
     bwrite(buf);
     brelse(buf);
 }
