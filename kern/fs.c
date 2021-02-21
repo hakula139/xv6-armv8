@@ -64,7 +64,21 @@ bzero(int dev, int bno)
 static uint32_t
 balloc(uint32_t dev)
 {
-    /* TODO: Your code here. */
+    for (int b = 0; b < sb.size; b += BPB) {
+        struct buf* bp = bread(dev, BBLOCK(b, sb));
+        for (int bi = 0; bi < BPB && b + bi < sb.size; ++bi) {
+            int m = 1 << (bi % 8);
+            if (!(bp->data[bi / 8] & m)) {  // Is block free?
+                bp->data[bi / 8] |= m;      // Mark block in use.
+                log_write(bp);
+                brelse(bp);
+                bzero(dev, b + bi);
+                return b + bi;
+            }
+        }
+        brelse(bp);
+    }
+    panic("\tballoc: out of blocks.\n");
 }
 
 /*
@@ -73,7 +87,13 @@ balloc(uint32_t dev)
 static void
 bfree(int dev, uint32_t b)
 {
-    /* TODO: Your code here. */
+    struct buf* bp = bread(dev, BBLOCK(b, sb));
+    int bi = b % BPB;
+    int m = 1 << (bi % 8);
+    if (!(bp->data[bi / 8] & m)) panic("\tbfree: freeing a free block.\n");
+    bp->data[bi / 8] &= ~m;
+    log_write(bp);
+    brelse(bp);
 }
 
 /*
@@ -155,7 +175,15 @@ struct {
 void
 iinit(int dev)
 {
-    /* TODO: Your code here. */
+    initlock(&icache.lock, "icache");
+    for (int i = 0; i < NINODE; ++i)
+        initsleeplock(&icache.inode[i].lock, "inode");
+
+    readsb(dev, &sb);
+    cprintf(
+        "super block: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmapstart %d\n",
+        sb.size, sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart,
+        sb.bmapstart);
 }
 
 static struct inode* iget(uint32_t dev, uint32_t inum);
@@ -169,7 +197,19 @@ static struct inode* iget(uint32_t dev, uint32_t inum);
 struct inode*
 ialloc(uint32_t dev, uint16_t type)
 {
-    /* TODO: Your code here. */
+    for (int inum = 1; inum < sb.ninodes; ++inum) {
+        struct buf* bp = bread(dev, IBLOCK(inum, sb));
+        struct dinode* dip = (struct dinode*)bp->data + inum % IPB;
+        if (!dip->type) {  // a free inode
+            memset(dip, 0, sizeof(*dip));
+            dip->type = type;
+            log_write(bp);  // mark it allocated on the disk
+            brelse(bp);
+            return iget(dev, inum);
+        }
+        brelse(bp);
+    }
+    panic("\tialloc: no inodes.\n");
 }
 
 /*
@@ -182,7 +222,16 @@ ialloc(uint32_t dev, uint16_t type)
 void
 iupdate(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    struct buf* bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    struct dinode* dip = (struct dinode*)bp->data + ip->inum % IPB;
+    dip->type = ip->type;
+    dip->major = ip->major;
+    dip->minor = ip->minor;
+    dip->nlink = ip->nlink;
+    dip->size = ip->size;
+    memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+    log_write(bp);
+    brelse(bp);
 }
 
 /*
@@ -193,7 +242,30 @@ iupdate(struct inode* ip)
 static struct inode*
 iget(uint32_t dev, uint32_t inum)
 {
-    /* TODO: Your code here. */
+    acquire(&icache.lock);
+
+    // Is the inode already cached?
+    struct inode* empty = NULL;
+    for (int i = 0; i < NINODE; ++i) {
+        struct inode* ip = &icache.inode[i];
+        if (ip->ref > 0 && ip->dev == dev && ip->inum == inum) {
+            ip->ref++;
+            release(&icache.lock);
+            return ip;
+        }
+        if (!empty && !ip->ref) empty = ip;  // remember empty slot
+    }
+
+    // Recycle an inode cache entry.
+    if (!empty) panic("\tiget: no inodes.\n");
+
+    struct inode* ip = empty;
+    ip->dev = dev;
+    ip->inum = inum;
+    ip->ref = 1;
+    ip->valid = 0;
+    release(&icache.lock);
+    return ip;
 }
 
 /*
@@ -203,7 +275,10 @@ iget(uint32_t dev, uint32_t inum)
 struct inode*
 idup(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    acquire(&icache.lock);
+    ip->ref++;
+    release(&icache.lock);
+    return ip;
 }
 
 /*
@@ -213,14 +288,36 @@ idup(struct inode* ip)
 void
 ilock(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    if (!ip || ip->ref < 1) panic("\tilock: invalid inode.\n");
+
+    acquiresleep(&ip->lock);
+    if (!ip->valid) {
+        struct buf* bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+        struct dinode* dip = (struct dinode*)bp->data + ip->inum % IPB;
+        ip->type = dip->type;
+        if (!ip->type) {
+            brelse(bp);
+            panic("\tilock: no type.\n");
+        }
+        ip->major = dip->major;
+        ip->minor = dip->minor;
+        ip->nlink = dip->nlink;
+        ip->size = dip->size;
+        memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+        brelse(bp);
+        ip->valid = 1;
+    }
 }
 
-/* Unlock the given inode. */
+/*
+ * Unlock the given inode.
+ */
 void
 iunlock(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    if (!ip || !holdingsleep(&ip->lock) || ip->ref < 1)
+        panic("\tiunlock: invalid inode.\n");
+    releasesleep(&ip->lock);
 }
 
 /*
@@ -236,7 +333,24 @@ iunlock(struct inode* ip)
 void
 iput(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    acquiresleep(&ip->lock);
+    if (ip->valid && !ip->nlink) {
+        acquire(&icache.lock);
+        int r = ip->ref;
+        release(&icache.lock);
+        if (r == 1) {
+            // inode has no links and no other references: truncate and free.
+            itrunc(ip);
+            ip->type = 0;
+            iupdate(ip);
+            ip->valid = 0;
+        }
+    }
+    releasesleep(&ip->lock);
+
+    acquire(&icache.lock);
+    ip->ref--;
+    release(&icache.lock);
 }
 
 /*
@@ -245,7 +359,8 @@ iput(struct inode* ip)
 void
 iunlockput(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    iunlock(ip);
+    iput(ip);
 }
 
 /*
@@ -262,7 +377,28 @@ iunlockput(struct inode* ip)
 static uint32_t
 bmap(struct inode* ip, uint32_t bn)
 {
-    /* TODO: Your code here. */
+    if (bn < NDIRECT) {
+        uint32_t addr = ip->addrs[bn];
+        if (!addr) ip->addrs[bn] = addr = balloc(ip->dev);
+        return addr;
+    }
+    bn -= NDIRECT;
+
+    if (bn < NINDIRECT) {
+        // Load indirect block, allocating if necessary.
+        uint32_t addr = ip->addrs[NDIRECT];
+        if (!addr) ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+        struct buf* bp = bread(ip->dev, addr);
+        uint32_t* a = (uint32_t*)bp->data;
+        addr = a[bn];
+        if (!addr) {
+            a[bn] = addr = balloc(ip->dev);
+            log_write(bp);
+        }
+        brelse(bp);
+        return addr;
+    }
+    panic("\tbmap: out of range.\n");
 }
 
 /*
@@ -276,7 +412,26 @@ bmap(struct inode* ip, uint32_t bn)
 static void
 itrunc(struct inode* ip)
 {
-    /* TODO: Your code here. */
+    for (int i = 0; i < NDIRECT; ++i) {
+        if (ip->addrs[i]) {
+            bfree(ip->dev, ip->addrs[i]);
+            ip->addrs[i] = 0;
+        }
+    }
+
+    if (ip->addrs[NDIRECT]) {
+        struct buf* bp = bread(ip->dev, ip->addrs[NDIRECT]);
+        uint32_t* a = (uint32_t*)bp->data;
+        for (int j = 0; j < NINDIRECT; ++j) {
+            if (a[j]) bfree(ip->dev, a[j]);
+        }
+        brelse(bp);
+        bfree(ip->dev, ip->addrs[NDIRECT]);
+        ip->addrs[NDIRECT] = 0;
+    }
+
+    ip->size = 0;
+    iupdate(ip);
 }
 
 /*
@@ -296,7 +451,7 @@ stati(struct inode* ip, struct stat* st)
     case T_FILE: st->st_mode = S_IFREG; break;
     case T_DIR: st->st_mode = S_IFDIR; break;
     case T_DEV: st->st_mode = 0; break;
-    default: panic("unexpected stat type %d. ", ip->type);
+    default: panic("\tstati: unexpected stat type %d.\n", ip->type);
     }
 }
 
@@ -307,9 +462,6 @@ stati(struct inode* ip, struct stat* st)
 ssize_t
 readi(struct inode* ip, char* dst, size_t off, size_t n)
 {
-    size_t tot, m;
-    struct buf* bp;
-
     if (ip->type == T_DEV) {
         if (ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
             return -1;
@@ -319,8 +471,8 @@ readi(struct inode* ip, char* dst, size_t off, size_t n)
     if (off > ip->size || off + n < off) return -1;
     if (off + n > ip->size) n = ip->size - off;
 
-    for (tot = 0; tot < n; tot += m, off += m, dst += m) {
-        bp = bread(ip->dev, bmap(ip, off / BSIZE));
+    for (size_t tot = 0, m = 0; tot < n; tot += m, off += m, dst += m) {
+        struct buf* bp = bread(ip->dev, bmap(ip, off / BSIZE));
         m = min(n - tot, BSIZE - off % BSIZE);
         memmove(dst, bp->data + off % BSIZE, m);
         brelse(bp);
@@ -335,9 +487,6 @@ readi(struct inode* ip, char* dst, size_t off, size_t n)
 ssize_t
 writei(struct inode* ip, char* src, size_t off, size_t n)
 {
-    size_t tot, m;
-    struct buf* bp;
-
     if (ip->type == T_DEV) {
         if (ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
             return -1;
@@ -347,8 +496,8 @@ writei(struct inode* ip, char* src, size_t off, size_t n)
     if (off > ip->size || off + n < off) return -1;
     if (off + n > MAXFILE * BSIZE) return -1;
 
-    for (tot = 0; tot < n; tot += m, off += m, src += m) {
-        bp = bread(ip->dev, bmap(ip, off / BSIZE));
+    for (size_t tot = 0, m = 0; tot < n; tot += m, off += m, src += m) {
+        struct buf* bp = bread(ip->dev, bmap(ip, off / BSIZE));
         m = min(n - tot, BSIZE - off % BSIZE);
         memmove(bp->data + off % BSIZE, src, m);
         log_write(bp);
@@ -377,20 +526,17 @@ namecmp(const char* s, const char* t)
 struct inode*
 dirlookup(struct inode* dp, char* name, size_t* poff)
 {
-    size_t off, inum;
+    if (dp->type != T_DIR) panic("\tdirlookup: not DIR.\n");
+
     struct dirent de;
-
-    if (dp->type != T_DIR) panic("dirlookup not DIR");
-
-    for (off = 0; off < dp->size; off += sizeof(de)) {
+    for (size_t off = 0; off < dp->size; off += sizeof(de)) {
         if (readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
-            panic("dirlookup read");
-        if (de.inum == 0) continue;
-        if (namecmp(name, de.name) == 0) {
+            panic("\tdirlookup: read error.\n");
+        if (!de.inum) continue;
+        if (!namecmp(name, de.name)) {
             // entry matches path element
             if (poff) *poff = off;
-            inum = de.inum;
-            return iget(dp->dev, inum);
+            return iget(dp->dev, de.inum);
         }
     }
     return 0;
@@ -402,18 +548,18 @@ dirlookup(struct inode* dp, char* name, size_t* poff)
 int
 dirlink(struct inode* dp, char* name, uint32_t inum)
 {
-    ssize_t off;
     struct dirent de;
-    struct inode* ip;
+    struct inode* ip = dirlookup(dp, name, 0);
 
     /* Check that name is not present. */
-    if ((ip = dirlookup(dp, name, 0)) != 0) {
+    if (ip) {
         iput(ip);
         return -1;
     }
 
     /* Look for an empty dirent. */
-    for (off = 0; off < dp->size; off += sizeof(de)) {
+    ssize_t off = 0;
+    for (; off < dp->size; off += sizeof(de)) {
         if (readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
             panic("dirlink read");
         if (de.inum == 0) break;
@@ -445,21 +591,18 @@ dirlink(struct inode* dp, char* name, uint32_t inum)
 static char*
 skipelem(char* path, char* name)
 {
-    char* s;
-    int len;
-
-    while (*path == '/') path++;
-    if (*path == 0) return 0;
-    s = path;
-    while (*path != '/' && *path != 0) path++;
-    len = path - s;
+    while (*path == '/') ++path;
+    if (*path == '\0') return 0;
+    char* s = path;
+    while (*path != '/' && *path != '\0') ++path;
+    int len = path - s;
     if (len >= DIRSIZ)
         memmove(name, s, DIRSIZ);
     else {
         memmove(name, s, len);
         name[len] = 0;
     }
-    while (*path == '/') path++;
+    while (*path == '/') ++path;
     return path;
 }
 
@@ -473,14 +616,10 @@ skipelem(char* path, char* name)
 static struct inode*
 namex(char* path, int nameiparent, char* name)
 {
-    struct inode *ip, *next;
+    struct inode* ip = NULL;
+    ip = (*path == '/') ? iget(ROOTDEV, ROOTINO) : idup(thisproc()->cwd);
 
-    if (*path == '/')
-        ip = iget(ROOTDEV, ROOTINO);
-    else
-        ip = idup(thisproc()->cwd);
-
-    while ((path = skipelem(path, name)) != 0) {
+    while (path = skipelem(path, name)) {
         ilock(ip);
         if (ip->type != T_DIR) {
             iunlockput(ip);
@@ -491,7 +630,8 @@ namex(char* path, int nameiparent, char* name)
             iunlock(ip);
             return ip;
         }
-        if ((next = dirlookup(ip, name, 0)) == 0) {
+        struct inode* next = dirlookup(ip, name, 0);
+        if (!next) {
             iunlockput(ip);
             return 0;
         }
