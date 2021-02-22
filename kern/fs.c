@@ -186,7 +186,7 @@ iinit(int dev)
         sb.bmapstart);
 }
 
-static struct inode* iget(uint32_t dev, uint32_t inum);
+static struct inode* iget(uint32_t, uint32_t);
 
 /*
  * Allocate an inode on device dev.

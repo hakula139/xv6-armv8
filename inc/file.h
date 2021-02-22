@@ -19,7 +19,9 @@ struct file {
     size_t off;
 };
 
-/* In-memory copy of an inode. */
+/*
+ * In-memory copy of an inode.
+ */
 struct inode {
     uint32_t dev;           // Device number
     uint32_t inum;          // Inode number
