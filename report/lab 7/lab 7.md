@@ -74,7 +74,7 @@ initlog(int dev)
 其中，super block 保存了磁盘的布局信息，详见注释：
 
 ```c {.line-numbers}
-// kern/fs.h
+// inc/fs.h
 
 /*
  * Disk layout:
@@ -395,6 +395,169 @@ write_head()
 之后的写磁盘过程同 1.3.1 节中函数 `recover_from_log` 的后半段。
 
 #### 1.4 Inode
+
+第 4 层是索引节点（inode），包含了文件的元信息，用于描述文件系统对象。我们将在 `kern/fs.c` 中实现。
+
+在这一层中，我们提供了以下方法：
+
+- `iinit`：初始化 `inode` 和 `icache`
+- `ialloc`：分配一个 `inode`
+- `iupdate`：将内存中的 `inode` 写入到磁盘
+- `idup`：将 `inode` 的引用数（`ref`）加 `1`，其中引用数表示当前内存中指向这个 `inode` 的指针数量
+- `ilock`：给 `inode` 加锁，需要时从磁盘中读取 `inode`
+- `iunlock`：给 `inode` 解锁
+- `iput`：将 `inode` 的引用数（`ref`）减 `1`，当引用数归 `0` 时，释放该 `inode`，并回收其 cache entry
+- `iunlockput`：`iunlock` + `iput` 的别名
+- `stati`：读取 `inode` 的 `stat` 信息
+- `readi`：从 `inode` 读取数据
+- `writei`：写入数据到 `inode`
+
+##### 1.4.1 `iinit`
+
+函数 `iinit` 的主要工作是初始化 `inode` 和 `icache` 的锁。
+
+```c {.line-numbers}
+// kern/fs.c
+
+void
+iinit(int dev)
+{
+    initlock(&icache.lock, "icache");
+    for (int i = 0; i < NINODE; ++i)
+        initsleeplock(&icache.inode[i].lock, "inode");
+
+    readsb(dev, &sb);
+    cprintf(
+        "super block: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmapstart %d\n",
+        sb.size, sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart,
+        sb.bmapstart);
+}
+```
+
+其中，`inode` 的结构如下所示：
+
+```c {.line-numbers}
+// inc/file.h
+
+/*
+ * In-memory copy of an inode.
+ */
+struct inode {
+    uint32_t dev;           // Device number
+    uint32_t inum;          // Inode number
+    int ref;                // Reference count
+    struct sleeplock lock;  // Protects everything below here
+    int valid;              // Inode has been read from disk?
+
+    uint16_t type;  // Copy of disk inode
+    uint16_t major;
+    uint16_t minor;
+    uint16_t nlink;
+    uint32_t size;
+    uint32_t addrs[NDIRECT + 1];
+};
+```
+
+`icache` 的结构如下所示：
+
+```c {.line-numbers}
+// kern/fs.c
+
+struct {
+    struct spinlock lock;
+    struct inode inode[NINODE];
+} icache;
+```
+
+##### 1.4.2 `ialloc`
+
+函数 `ialloc` 的主要工作是在磁盘中找到一个未分配的 `inode`（`type` 为 `0`），然后将它的 `type` 设置为给定的文件类型，表示已分配，最后调用函数 `iget`，返回这个 `inode` 在内存中的拷贝。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Allocate an inode on device dev.
+ *
+ * Mark it as allocated by giving it type type.
+ * Returns an unlocked but allocated and referenced inode.
+ */
+struct inode*
+ialloc(uint32_t dev, uint16_t type)
+{
+    for (int inum = 1; inum < sb.ninodes; ++inum) {
+        struct buf* bp = bread(dev, IBLOCK(inum, sb));
+        struct dinode* dip = (struct dinode*)bp->data + inum % IPB;
+        if (!dip->type) {  // a free inode
+            memset(dip, 0, sizeof(*dip));
+            dip->type = type;
+            log_write(bp);  // mark it allocated on the disk
+            brelse(bp);
+            return iget(dev, inum);
+        }
+        brelse(bp);
+    }
+    panic("\tialloc: no inodes.\n");
+}
+```
+
+其中，函数 `iget` 先在 `icache` 中根据标号（`inum`）寻找对应的 `inode`。如果找到，则将其引用数（`ref`）加 `1` 并返回，否则在 `icache` 中回收一个空闲的 cache entry 给这个 `inode`，将其引用数（`ref`）设置为 `1` 并返回。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Find the inode with number inum on device dev
+ * and return the in-memory copy. Does not lock
+ * the inode and does not read it from disk.
+ */
+static struct inode*
+iget(uint32_t dev, uint32_t inum)
+{
+    acquire(&icache.lock);
+
+    // Is the inode already cached?
+    struct inode* empty = NULL;
+    for (int i = 0; i < NINODE; ++i) {
+        struct inode* ip = &icache.inode[i];
+        if (ip->ref > 0 && ip->dev == dev && ip->inum == inum) {
+            ip->ref++;
+            release(&icache.lock);
+            return ip;
+        }
+        if (!empty && !ip->ref) empty = ip;  // remember empty slot
+    }
+
+    // Recycle an inode cache entry.
+    if (!empty) panic("\tiget: no inodes.\n");
+
+    struct inode* ip = empty;
+    ip->dev = dev;
+    ip->inum = inum;
+    ip->ref = 1;
+    ip->valid = 0;
+    release(&icache.lock);
+    return ip;
+}
+```
+
+##### 1.4.3 `iupdate`
+
+##### 1.4.4 `idup`
+
+##### 1.4.5 `ilock`
+
+##### 1.4.6 `iunlock`
+
+##### 1.4.7 `iput`
+
+##### 1.4.8 `iunlockput`
+
+##### 1.4.9 `stati`
+
+##### 1.4.10 `readi`
+
+##### 1.4.11 `writei`
 
 #### 1.5 Directory
 
