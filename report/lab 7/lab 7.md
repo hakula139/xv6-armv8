@@ -965,7 +965,22 @@ writei(struct inode* ip, char* src, size_t off, size_t n)
 
 #### 1.5 Directory
 
+第 5 层是目录，用于组织文件系统的层次结构（hierarchy）。助教已在 `kern/fs.c` 中实现，由于时间有限，这里就不详细阐述了。
+
+在这一层中，我们提供了以下方法：
+
+- `namecmp`：按字典序比较两个目录名的大小
+- `dirlookup`：在一个目录下查找指定名称的文件夹
+- `dirlink`：在一个目录下新建指定名称的文件夹
+
 #### 1.6 Pathname
+
+第 6 层是路径，用于以字符串表示一个文件或文件夹在文件系统中的位置。助教已在 `kern/fs.c` 中实现，由于时间有限，这里就不详细阐述了。
+
+在这一层中，我们提供了以下方法：
+
+- `namei`：查找指定路径的文件或文件夹
+- `nameiparent`：查找指定路径的父文件夹
 
 #### 1.7 File descriptor
 
