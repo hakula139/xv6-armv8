@@ -105,8 +105,7 @@ struct superblock {
 void
 readsb(int dev, struct superblock* sb)
 {
-    struct buf* b;
-    b = bread(dev, 1);
+    struct buf* b = bread(dev, 1);
     memmove(sb, b->data, sizeof(*sb));
     brelse(b);
 }
@@ -406,9 +405,9 @@ write_head()
 - `idup`：将 `inode` 的引用数（`ref`）加 `1`，其中引用数表示当前内存中指向这个 `inode` 的指针数量
 - `ilock`：给 `inode` 加锁，需要时从磁盘中读取 `inode`
 - `iunlock`：给 `inode` 解锁
-- `iput`：将 `inode` 的引用数（`ref`）减 `1`，当引用数归 `0` 时，释放该 `inode`，并回收其 cache entry
+- `iput`：当 `inode` 的引用数（`ref`）为 `1` 时，清空并释放该 `inode`，否则将其引用数减 `1`
 - `iunlockput`：`iunlock` + `iput` 的别名
-- `stati`：读取 `inode` 的 `stat` 信息
+- `stati`：复制 `inode` 的元数据到 `stat`
 - `readi`：从 `inode` 读取数据
 - `writei`：写入数据到 `inode`
 
@@ -435,6 +434,10 @@ iinit(int dev)
 ```
 
 其中，`inode` 的结构如下所示：
+
+![The representation of a file on disk](./assets/dinode.png)
+
+本图引自 *xv6: a simple, Unix-like teaching operating system* [^1]。
 
 ```c {.line-numbers}
 // inc/file.h
@@ -543,21 +546,422 @@ iget(uint32_t dev, uint32_t inum)
 
 ##### 1.4.3 `iupdate`
 
+函数 `iupdate` 的主要工作是将内存中的 `inode` 写入到磁盘。由于我们的 `icache` 采用直写（write-through）模式，因此每当 `inode` 有字段被修改，就需要调用一次函数 `iupdate` 进行写回操作。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Copy a modified in-memory inode to disk.
+ *
+ * Must be called after every change to an ip->xxx field
+ * that lives on disk, since i-node cache is write-through.
+ * Caller must hold ip->lock.
+ */
+void
+iupdate(struct inode* ip)
+{
+    struct buf* bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    struct dinode* dip = (struct dinode*)bp->data + ip->inum % IPB;
+    dip->type = ip->type;
+    dip->major = ip->major;
+    dip->minor = ip->minor;
+    dip->nlink = ip->nlink;
+    dip->size = ip->size;
+    memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+    log_write(bp);
+    brelse(bp);
+}
+```
+
 ##### 1.4.4 `idup`
+
+函数 `idup` 的主要工作是将 `inode` 的引用数（`ref`）加 `1`，其中引用数表示当前内存中指向这个 `inode` 的指针数量。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Increment reference count for ip.
+ * Returns ip to enable ip = idup(ip1) idiom.
+ */
+struct inode*
+idup(struct inode* ip)
+{
+    acquire(&icache.lock);
+    ip->ref++;
+    release(&icache.lock);
+    return ip;
+}
+```
 
 ##### 1.4.5 `ilock`
 
+函数 `ilock` 的主要工作是给指定的 `inode` 加锁。如果当前 `inode` 不在内存中（即 `valid` 为 `0`），则从磁盘中读取，并将 `valid` 设置为 `1`。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Lock the given inode.
+ * Reads the inode from disk if necessary.
+ */
+void
+ilock(struct inode* ip)
+{
+    if (!ip || ip->ref < 1) panic("\tilock: invalid inode.\n");
+
+    acquiresleep(&ip->lock);
+    if (!ip->valid) {
+        struct buf* bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+        struct dinode* dip = (struct dinode*)bp->data + ip->inum % IPB;
+        ip->type = dip->type;
+        if (!ip->type) {
+            brelse(bp);
+            panic("\tilock: no type.\n");
+        }
+        ip->major = dip->major;
+        ip->minor = dip->minor;
+        ip->nlink = dip->nlink;
+        ip->size = dip->size;
+        memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+        ip->valid = 1;
+        brelse(bp);
+    }
+}
+```
+
 ##### 1.4.6 `iunlock`
+
+函数 `iunlock` 的主要工作是给指定的 `inode` 解锁。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Unlock the given inode.
+ */
+void
+iunlock(struct inode* ip)
+{
+    if (!ip || !holdingsleep(&ip->lock) || ip->ref < 1)
+        panic("\tiunlock: invalid inode.\n");
+    releasesleep(&ip->lock);
+}
+```
 
 ##### 1.4.7 `iput`
 
+函数 `iput` 的主要工作是当 `inode` 的引用数（`ref`）为 `1` 时，调用函数 `itrunc` 清空并释放该 `inode` 的内容，然后调用函数 `iupdate` 更新磁盘中的 `inode`；否则将其引用数减 `1`。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Drop a reference to an in-memory inode.
+ *
+ * If that was the last reference, the inode cache entry can
+ * be recycled.
+ * If that was the last reference and the inode has no links
+ * to it, free the inode (and its content) on disk.
+ * All calls to iput() must be inside a transaction in
+ * case it has to free the inode.
+ */
+void
+iput(struct inode* ip)
+{
+    acquire(&icache.lock);
+    if (ip->ref == 1 && ip->valid && !ip->nlink) {
+        // ip->ref == 1 means no other process can have ip locked,
+        // so this acquiresleep() won't block (or deadlock).
+        acquiresleep(&ip->lock);
+        release(&icache.lock);
+
+        // inode has no links and no other references: truncate and free.
+        itrunc(ip);
+        ip->type = 0;
+        iupdate(ip);
+        ip->valid = 0;
+
+        releasesleep(&ip->lock);
+        acquire(&icache.lock);
+    }
+
+    ip->ref--;
+    release(&icache.lock);
+}
+```
+
+这里函数 `itrunc` 用于清空 `inode` 的内容，包括 `NDIRECT` 个直接索引磁盘块（direct block）和 `NINDIRECT` 个间接索引磁盘块（indirect block）。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Truncate inode (discard contents).
+ *
+ * Only called when the inode has no links
+ * to it (no directory entries referring to it)
+ * and has no in-memory reference to it (is
+ * not an open file or current directory).
+ */
+static void
+itrunc(struct inode* ip)
+{
+    for (int i = 0; i < NDIRECT; ++i) {
+        if (ip->addrs[i]) {
+            bfree(ip->dev, ip->addrs[i]);
+            ip->addrs[i] = 0;
+        }
+    }
+
+    if (ip->addrs[NDIRECT]) {
+        struct buf* bp = bread(ip->dev, ip->addrs[NDIRECT]);
+        uint32_t* a = (uint32_t*)bp->data;
+        for (int j = 0; j < NINDIRECT; ++j) {
+            if (a[j]) bfree(ip->dev, a[j]);
+        }
+        brelse(bp);
+        bfree(ip->dev, ip->addrs[NDIRECT]);
+        ip->addrs[NDIRECT] = 0;
+    }
+
+    ip->size = 0;
+    iupdate(ip);
+}
+```
+
+其中，函数 `bfree` 用于释放一个 block，将其在 bitmap 中标记为未使用。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Free a disk block.
+ */
+static void
+bfree(int dev, uint32_t b)
+{
+    struct buf* bp = bread(dev, BBLOCK(b, sb));
+    int bi = b % BPB;
+    int m = 1 << (bi % 8);
+    if (!(bp->data[bi / 8] & m)) panic("\tbfree: freeing a free block.\n");
+    bp->data[bi / 8] &= ~m;
+    log_write(bp);
+    brelse(bp);
+}
+```
+
 ##### 1.4.8 `iunlockput`
+
+函数 `iunlockput` 是 `iunlock` + `iput` 的别名。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Common idiom: unlock, then put.
+ */
+void
+iunlockput(struct inode* ip)
+{
+    iunlock(ip);
+    iput(ip);
+}
+```
 
 ##### 1.4.9 `stati`
 
+函数 `stati` 的主要工作是复制 `inode` 的元数据（metadata）到 `stat` 结构，届时用户程序可以通过 `stat` 系统调用读取。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Copy stat information from inode.
+ * Caller must hold ip->lock.
+ */
+void
+stati(struct inode* ip, struct stat* st)
+{
+    // FIXME: Support other fields in stat.
+    st->st_dev = ip->dev;
+    st->st_ino = ip->inum;
+    st->st_nlink = ip->nlink;
+    st->st_size = ip->size;
+
+    switch (ip->type) {
+    case T_FILE: st->st_mode = S_IFREG; break;
+    case T_DIR: st->st_mode = S_IFDIR; break;
+    case T_DEV: st->st_mode = 0; break;
+    default: panic("\tstati: unexpected stat type %d.\n", ip->type);
+    }
+}
+```
+
 ##### 1.4.10 `readi`
 
+函数 `readi` 的主要工作是从 `inode` 读取数据。具体来说，先确保数据的读取范围在文件内，然后利用函数 `bmap` 定位文件中 block 的地址并读取到 `buf`，接着将数据从 `buf` 复制到目标地址 `dst`，最后返回成功读取的 block 数量。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Read data from inode.
+ * Caller must hold ip->lock.
+ */
+ssize_t
+readi(struct inode* ip, char* dst, size_t off, size_t n)
+{
+    if (ip->type == T_DEV) {
+        if (ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].read)
+            return -1;
+        return devsw[ip->major].read(ip, dst, n);
+    }
+
+    if (off > ip->size || off + n < off) return -1;
+    if (off + n > ip->size) n = ip->size - off;
+
+    for (size_t tot = 0, m = 0; tot < n; tot += m, off += m, dst += m) {
+        struct buf* bp = bread(ip->dev, bmap(ip, off / BSIZE));
+        m = min(n - tot, BSIZE - off % BSIZE);
+        memmove(dst, bp->data + off % BSIZE, m);
+        brelse(bp);
+    }
+    return n;
+}
+```
+
+这里函数 `bmap` 根据 block 的标号找到其对应的地址并返回，其中 direct block 的地址位于数组 `ip->addrs` 中，indirect block 的地址位于 `ip->addrs[NDIRECT]` 指向的 block 所保存的数组中。如果发现找不到对应的 block，则调用函数 `balloc` 分配一个新的 block。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Inode content
+ *
+ * The content (data) associated with each inode is stored
+ * in blocks on the disk. The first NDIRECT block numbers
+ * are listed in ip->addrs[].  The next NINDIRECT blocks are
+ * listed in block ip->addrs[NDIRECT].
+ *
+ * Return the disk block address of the nth block in inode ip.
+ * If there is no such block, bmap allocates one.
+ */
+static uint32_t
+bmap(struct inode* ip, uint32_t bn)
+{
+    if (bn < NDIRECT) {
+        // Load direct block, allocating if necessary.
+        uint32_t addr = ip->addrs[bn];
+        if (!addr) ip->addrs[bn] = addr = balloc(ip->dev);
+        return addr;
+    }
+    bn -= NDIRECT;
+
+    if (bn < NINDIRECT) {
+        // Load indirect block, allocating if necessary.
+        uint32_t addr = ip->addrs[NDIRECT];
+        if (!addr) ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+        struct buf* bp = bread(ip->dev, addr);
+        uint32_t* a = (uint32_t*)bp->data;
+        addr = a[bn];
+        if (!addr) {
+            a[bn] = addr = balloc(ip->dev);
+            log_write(bp);
+        }
+        brelse(bp);
+        return addr;
+    }
+    panic("\tbmap: out of range.\n");
+}
+```
+
+其中，函数 `balloc` 根据 block 在 bitmap 中所对应的位，遍历所有 block 找到一个可用的 block，将其在 bitmap 中标记为使用中，并调用函数 `bzero` 清空此 block。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Allocate a zeroed disk block.
+ */
+static uint32_t
+balloc(uint32_t dev)
+{
+    for (int b = 0; b < sb.size; b += BPB) {
+        struct buf* bp = bread(dev, BBLOCK(b, sb));
+        for (int bi = 0; bi < BPB && b + bi < sb.size; ++bi) {
+            int m = 1 << (bi % 8);
+            if (!(bp->data[bi / 8] & m)) {  // Is block free?
+                bp->data[bi / 8] |= m;      // Mark block in use.
+                log_write(bp);
+                brelse(bp);
+                bzero(dev, b + bi);
+                return b + bi;
+            }
+        }
+        brelse(bp);
+    }
+    panic("\tballoc: out of blocks.\n");
+}
+```
+
+函数 `bzero` 用于清空一个 block。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Zero a block.
+ */
+static void
+bzero(int dev, int bno)
+{
+    struct buf* b = bread(dev, bno);
+    memset(b->data, 0, BSIZE);
+    log_write(b);
+    brelse(b);
+}
+```
+
 ##### 1.4.11 `writei`
+
+函数 `writei` 的主要工作是写入数据到 `inode`。具体来说，先确保数据的写入起始地址在文件内，且写入结束地址不超过最大文件大小 `MAXFILE * BSIZE`，然后利用函数 `bmap` 定位文件中 block 的地址并读取到 `buf`，接着将数据从源地址 `src` 复制到 `buf`，并调用函数 `log_write` 加入写磁盘队列，最后返回成功写入的 block 数量。其中，如果写入的 block 数量超过文件大小，文件将自动扩容，最后需要更新此文件的大小，并调用函数 `iupdate` 写入到磁盘。
+
+```c {.line-numbers}
+// kern/fs.c
+
+/*
+ * Write data to inode.
+ * Caller must hold ip->lock.
+ */
+ssize_t
+writei(struct inode* ip, char* src, size_t off, size_t n)
+{
+    if (ip->type == T_DEV) {
+        if (ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
+            return -1;
+        return devsw[ip->major].write(ip, src, n);
+    }
+
+    if (off > ip->size || off + n < off) return -1;
+    if (off + n > MAXFILE * BSIZE) return -1;
+
+    for (size_t tot = 0, m = 0; tot < n; tot += m, off += m, src += m) {
+        struct buf* bp = bread(ip->dev, bmap(ip, off / BSIZE));
+        m = min(n - tot, BSIZE - off % BSIZE);
+        memmove(bp->data + off % BSIZE, src, m);
+        log_write(bp);
+        brelse(bp);
+    }
+
+    if (n > 0 && off > ip->size) {
+        ip->size = off;
+        iupdate(ip);
+    }
+    return n;
+}
+```
 
 #### 1.5 Directory
 
