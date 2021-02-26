@@ -561,13 +561,14 @@ dirlink(struct inode* dp, char* name, uint32_t inum)
     ssize_t off = 0;
     for (; off < dp->size; off += sizeof(de)) {
         if (readi(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
-            panic("dirlink read");
+            panic("\tdirlink: read error.\n");
         if (de.inum == 0) break;
     }
 
     strncpy(de.name, name, DIRSIZ);
     de.inum = inum;
-    if (writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de)) panic("dirlink");
+    if (writei(dp, (char*)&de, off, sizeof(de)) != sizeof(de))
+        panic("\tdirlink: write error.\n");
 
     return 0;
 }
