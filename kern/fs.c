@@ -37,8 +37,7 @@ struct superblock sb;
 void
 readsb(int dev, struct superblock* sb)
 {
-    struct buf* b;
-    b = bread(dev, 1);
+    struct buf* b = bread(dev, 1);
     memmove(sb, b->data, sizeof(*sb));
     brelse(b);
 }
@@ -49,8 +48,7 @@ readsb(int dev, struct superblock* sb)
 static void
 bzero(int dev, int bno)
 {
-    struct buf* b;
-    b = bread(dev, bno);
+    struct buf* b = bread(dev, bno);
     memset(b->data, 0, BSIZE);
     log_write(b);
     brelse(b);
@@ -304,8 +302,8 @@ ilock(struct inode* ip)
         ip->nlink = dip->nlink;
         ip->size = dip->size;
         memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
-        brelse(bp);
         ip->valid = 1;
+        brelse(bp);
     }
 }
 
@@ -333,22 +331,23 @@ iunlock(struct inode* ip)
 void
 iput(struct inode* ip)
 {
-    acquiresleep(&ip->lock);
-    if (ip->valid && !ip->nlink) {
-        acquire(&icache.lock);
-        int r = ip->ref;
-        release(&icache.lock);
-        if (r == 1) {
-            // inode has no links and no other references: truncate and free.
-            itrunc(ip);
-            ip->type = 0;
-            iupdate(ip);
-            ip->valid = 0;
-        }
-    }
-    releasesleep(&ip->lock);
-
     acquire(&icache.lock);
+    if (ip->ref == 1 && ip->valid && !ip->nlink) {
+        // ip->ref == 1 means no other process can have ip locked,
+        // so this acquiresleep() won't block (or deadlock).
+        acquiresleep(&ip->lock);
+        release(&icache.lock);
+
+        // inode has no links and no other references: truncate and free.
+        itrunc(ip);
+        ip->type = 0;
+        iupdate(ip);
+        ip->valid = 0;
+
+        releasesleep(&ip->lock);
+        acquire(&icache.lock);
+    }
+
     ip->ref--;
     release(&icache.lock);
 }
@@ -378,6 +377,7 @@ static uint32_t
 bmap(struct inode* ip, uint32_t bn)
 {
     if (bn < NDIRECT) {
+        // Load direct block, allocating if necessary.
         uint32_t addr = ip->addrs[bn];
         if (!addr) ip->addrs[bn] = addr = balloc(ip->dev);
         return addr;
