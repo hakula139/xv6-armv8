@@ -408,12 +408,12 @@ write_head()
 - `iput`：当 `inode` 的引用数（`ref`）为 `1` 时，清空并释放该 `inode`，否则将其引用数减 `1`
 - `iunlockput`：`iunlock` + `iput` 的别名
 - `stati`：复制 `inode` 的元数据到 `stat`
-- `readi`：从 `inode` 读取数据
+- `readi`：从 `inode` 中读取数据
 - `writei`：写入数据到 `inode`
 
 ##### 1.4.1 `iinit`
 
-函数 `iinit` 的主要工作是初始化 `inode` 和 `icache` 的锁。
+函数 `iinit` 的主要工作是初始化 `icache` 和 `inode` 的锁。
 
 ```c {.line-numbers}
 // kern/fs.c
@@ -433,7 +433,18 @@ iinit(int dev)
 }
 ```
 
-其中，`inode` 的结构如下所示：
+其中，`icache` 的结构如下所示：
+
+```c {.line-numbers}
+// kern/fs.c
+
+struct {
+    struct spinlock lock;
+    struct inode inode[NINODE];
+} icache;
+```
+
+`inode` 的结构如下所示：
 
 ![The representation of a file on disk](./assets/dinode.png)
 
@@ -459,17 +470,6 @@ struct inode {
     uint32_t size;
     uint32_t addrs[NDIRECT + 1];
 };
-```
-
-`icache` 的结构如下所示：
-
-```c {.line-numbers}
-// kern/fs.c
-
-struct {
-    struct spinlock lock;
-    struct inode inode[NINODE];
-} icache;
 ```
 
 ##### 1.4.2 `ialloc`
@@ -801,7 +801,7 @@ stati(struct inode* ip, struct stat* st)
 
 ##### 1.4.10 `readi`
 
-函数 `readi` 的主要工作是从 `inode` 读取数据。具体来说，先确保数据的读取范围在文件内，然后利用函数 `bmap` 定位文件中 block 的地址并读取到 `buf`，接着将数据从 `buf` 复制到目标地址 `dst`，最后返回成功读取的 block 数量。
+函数 `readi` 的主要工作是从 `inode` 中读取数据。具体来说，先确保数据的读取范围在文件内，然后利用函数 `bmap` 定位文件中 block 的地址并读取到 `buf`，接着将数据从 `buf` 复制到目标地址 `dst`，最后返回成功读取的 block 数量。
 
 ```c {.line-numbers}
 // kern/fs.c
@@ -983,6 +983,232 @@ writei(struct inode* ip, char* src, size_t off, size_t n)
 - `nameiparent`：查找指定路径的父文件夹
 
 #### 1.7 File descriptor
+
+第 7 层是文件描述符，以非负整数的形式，表示一个已打开文件（或管道、socket 等，一切皆文件！）的引用。内核为每个进程维护了一个进程级文件表（file table），同时在全局维护了一个系统级文件表（global file table，或 `ftable`），包含了所有打开的文件，文件描述符实际就是这个表的索引。我们将在 `kern/file.c` 中实现。由于时间有限，我们目前仅支持普通文件。
+
+在这一层中，我们提供了以下方法：
+
+- `fileinit`：初始化 `ftable`
+- `filealloc`：分配一个新文件
+- `filedup`：将文件的引用数（`ref`）加 `1`
+- `fileclose`：将文件的引用数（`ref`）减 `1`，当引用数降到 `0` 时关闭文件
+- `filestat`：读取文件的元数据
+- `fileread`：从文件读取数据
+- `filewrite`：写入数据到文件
+
+##### 1.7.1 `fileinit`
+
+函数 `fileinit` 的主要工作是初始化 `ftable` 的锁。
+
+```c {.line-numbers}
+// kern/file.c
+
+void
+fileinit()
+{
+    initlock(&ftable.lock, "ftable");
+}
+```
+
+其中，`ftable` 的结构如下所示：
+
+```c {.line-numbers}
+// kern/file.c
+
+struct {
+    struct spinlock lock;
+    struct file file[NFILE];
+} ftable;
+```
+
+`file` 的结构如下所示：
+
+```c {.line-numbers}
+// inc/file.h
+
+struct file {
+    enum { FD_NONE, FD_PIPE, FD_INODE } type;
+    int ref;
+    char readable;
+    char writable;
+    struct pipe* pipe;
+    struct inode* ip;
+    size_t off;
+};
+```
+
+##### 1.7.2 `filealloc`
+
+函数 `filealloc` 的主要工作是在 `ftable` 中找到一个未使用的文件（`ref` 为 `0`），然后将它标记为使用中并返回。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Allocate a file structure.
+ */
+struct file*
+filealloc()
+{
+    acquire(&ftable.lock);
+    for (struct file* f = ftable.file; f < ftable.file + NFILE; ++f) {
+        if (!f->ref) {
+            f->ref = 1;
+            release(&ftable.lock);
+            return f;
+        }
+    }
+    release(&ftable.lock);
+    return NULL;
+}
+```
+
+##### 1.7.3 `filedup`
+
+函数 `filedup` 的主要工作是将文件的引用数（`ref`）加 `1`，表示创建一个此文件的引用拷贝。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Increment ref count for file f.
+ */
+struct file*
+filedup(struct file* f)
+{
+    acquire(&ftable.lock);
+    if (f->ref < 1) panic("\tfiledup: invalid file.\n");
+    f->ref++;
+    release(&ftable.lock);
+    return f;
+}
+```
+
+##### 1.7.4 `fileclose`
+
+函数 `fileclose` 的主要工作是将文件的引用数（`ref`）减 `1`；当引用数降到 `0` 时，对于普通文件，调用函数 `iput` 关闭文件（暂不支持其他文件类型）。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Close file f. (Decrement ref count, close when reaches 0.)
+ */
+void
+fileclose(struct file* f)
+{
+    acquire(&ftable.lock);
+    if (f->ref < 1) panic("\tfileclose: invalid file.\n");
+    if (--f->ref > 0) {
+        release(&ftable.lock);
+        return;
+    }
+
+    struct file ff = *f;
+    f->ref = 0;
+    f->type = FD_NONE;
+    release(&ftable.lock);
+
+    if (ff.type == FD_INODE) {
+        begin_op();
+        iput(ff.ip);
+        end_op();
+    } else {
+        panic("\tfileclose: unsupported type.\n");
+    }
+}
+```
+
+##### 1.7.5 `filestat`
+
+函数 `filestat` 的主要工作是调用函数 `stati` 读取文件的元数据。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Get metadata about file f.
+ */
+int
+filestat(struct file* f, struct stat* st)
+{
+    if (f->type == FD_INODE) {
+        ilock(f->ip);
+        stati(f->ip, st);
+        iunlock(f->ip);
+        return 0;
+    }
+    return -1;
+}
+```
+
+##### 1.7.6 `fileread`
+
+函数 `fileread` 的主要工作是对于普通文件，调用函数 `readi` 从文件中读取数据（暂不支持其他文件类型）。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Read from file f.
+ */
+ssize_t
+fileread(struct file* f, char* addr, ssize_t n)
+{
+    if (!f->readable) return -1;
+    if (f->type == FD_INODE) {
+        ilock(f->ip);
+        int r = readi(f->ip, addr, f->off, n);
+        if (r > 0) f->off += r;
+        iunlock(f->ip);
+        return r;
+    }
+    panic("\tfileread: unsupported type.\n");
+}
+```
+
+##### 1.7.7 `filewrite`
+
+函数 `filewrite` 的主要工作是对于普通文件，调用函数 `writei` 写入数据到文件（暂不支持其他文件类型）。
+
+```c {.line-numbers}
+// kern/file.c
+
+/*
+ * Write to file f.
+ */
+ssize_t
+filewrite(struct file* f, char* addr, ssize_t n)
+{
+    if (!f->writable) return -1;
+    if (f->type == FD_INODE) {
+        // Write a few blocks at a time to avoid exceeding the maximum log
+        // transaction size, including i-node, indirect block, allocation
+        // blocks, and 2 blocks of slop for non-aligned writes. This really
+        // belongs lower down, since writei() might be writing a device like the
+        // console.
+        int max = ((MAXOPBLOCKS - 4) / 2) * 512;
+        int i = 0;
+        while (i < n) {
+            int n1 = n - i;
+            if (n1 > max) n1 = max;
+
+            begin_op();
+            ilock(f->ip);
+            int r = writei(f->ip, addr + i, f->off, n1);
+            if (r > 0) f->off += r;
+            iunlock(f->ip);
+            end_op();
+
+            if (r < 0) break;
+            if (r != n1) panic("\tfilewrite: partial data written.\n");
+            i += r;
+        }
+        return i == n ? n : -1;
+    }
+    panic("\tfilewrite: unsupported type.\n");
+}
+```
 
 ### 2. 系统调用
 
