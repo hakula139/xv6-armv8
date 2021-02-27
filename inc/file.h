@@ -48,24 +48,7 @@ struct devsw {
 
 extern struct devsw devsw[];
 
-void readsb(int, struct superblock*);
-int dirlink(struct inode*, char*, uint32_t);
-struct inode* dirlookup(struct inode*, char*, size_t*);
-struct inode* ialloc(uint32_t, uint16_t);
-struct inode* idup(struct inode*);
-void iinit(int dev);
-void ilock(struct inode*);
-void iput(struct inode*);
-void iunlock(struct inode*);
-void iunlockput(struct inode*);
-void iupdate(struct inode*);
-int namecmp(const char*, const char*);
-struct inode* namei(char*);
-struct inode* nameiparent(char*, char*);
-void stati(struct inode*, struct stat*);
-ssize_t readi(struct inode*, char*, size_t, size_t);
-ssize_t writei(struct inode*, char*, size_t, size_t);
-
+void fileinit();
 struct file* filealloc();
 struct file* filedup(struct file*);
 void fileclose(struct file*);
