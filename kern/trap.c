@@ -29,6 +29,7 @@ interrupt(struct trapframe* tf)
     if (src & IRQ_CNTPNSIRQ) {
         timer_reset();
         timer();
+        yield();
     } else if (src & IRQ_TIMER) {
         clock_reset();
         clock();
@@ -59,14 +60,18 @@ trap(struct trapframe* tf)
     case EC_SVC64:
         if (!iss) {
             /* Jump to syscall to handle the system call from user process */
-            /* TODO: Your code here. */
+            struct proc* p = thisproc();
+            if (p->killed) exit(1);
+            p->tf = tf;
+            syscall();
+            if (p->killed) exit(1);
+            break;
         } else {
             cprintf("\ttrap: unexpected svc iss 0x%x\n", iss);
         }
         break;
     default: panic("\ttrap: unexpected irq.\n");
     }
-    if (bad) panic("\ttrap: unexpected irq.\n");
 }
 
 void

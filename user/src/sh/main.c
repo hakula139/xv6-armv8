@@ -56,10 +56,10 @@ int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd* parsecmd(char*);
 
-void *
+void*
 malloc1(size_t sz)
 {
-#define MAXN  10000
+#define MAXN 10000
     static char mem[MAXN];
     static size_t i;
     if ((i += sz) > MAXN) {
