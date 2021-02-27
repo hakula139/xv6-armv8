@@ -23,35 +23,48 @@ irq_init()
 }
 
 void
+interrupt(struct trapframe* tf)
+{
+    int src = get32(IRQ_SRC_CORE(cpuid()));
+    if (src & IRQ_CNTPNSIRQ) {
+        timer_reset();
+        timer();
+    } else if (src & IRQ_TIMER) {
+        clock_reset();
+        clock();
+    } else if (src & IRQ_GPU) {
+        int p1 = get32(IRQ_PENDING_1);
+        int p2 = get32(IRQ_PENDING_2);
+        if (p1 & AUX_INT) {
+            uart_intr();
+        } else if (p2 & VC_ARASANSDIO_INT) {
+            sd_intr();
+        } else {
+            cprintf(
+                "\tinterrupt: unexpected gpu intr p1 %x, p2 %x, sd %d, omitted.\n",
+                p1, p2, p2 & VC_ARASANSDIO_INT);
+        }
+    } else {
+        cprintf("\tinterrupt: unexpected interrupt at CPU %d\n", cpuid());
+    }
+}
+
+void
 trap(struct trapframe* tf)
 {
-    struct proc* p = thisproc();
-    int src = get32(IRQ_SRC_CORE(cpuid()));
-    int bad = 0;
-
-    if (src & IRQ_CNTPNSIRQ) {
-        timer(), timer_reset(), yield();
-    } else if (src & IRQ_TIMER) {
-        clock(), clock_reset();
-    } else if (src & IRQ_GPU) {
-        if (get32(IRQ_PENDING_1) & AUX_INT)
-            uart_intr();
-        else if (get32(IRQ_PENDING_2) & VC_ARASANSDIO_INT)
-            sd_intr();
-        else
-            bad = 1;
-    } else {
-        switch (resr() >> EC_SHIFT) {
-        case EC_SVC64:
-            lesr(0); /* Clear esr. */
+    int ec = resr() >> EC_SHIFT, iss = resr() & ISS_MASK;
+    lesr(0);  // Clear esr.
+    switch (ec) {
+    case EC_UNKNOWN: interrupt(tf); break;
+    case EC_SVC64:
+        if (!iss) {
             /* Jump to syscall to handle the system call from user process */
-            if (p->killed) exit(1);
-            p->tf = tf;
-            syscall();
-            if (p->killed) exit(1);
-            break;
-        default: bad = 1;
+            /* TODO: Your code here. */
+        } else {
+            cprintf("\ttrap: unexpected svc iss 0x%x\n", iss);
         }
+        break;
+    default: panic("\ttrap: unexpected irq.\n");
     }
     if (bad) panic("\ttrap: unexpected irq.\n");
 }

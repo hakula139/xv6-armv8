@@ -40,10 +40,11 @@
 #define SPSR_EL2_VALUE (SPSR_MASK_ALL | SPSR_EL1h)
 
 /* Exception Class in ESR_EL1. */
-#define EC_SHIFT  26
-#define EC_SVC64  0x15
-#define EC_DABORT 0x24
-#define EC_IABORT 0x20
+#define EC_SHIFT   26
+#define EC_UNKNOWN 0x00
+#define EC_SVC64   0x15
+#define EC_DABORT  0x24
+#define EC_IABORT  0x20
 
 #define ISS_MASK 0xFFFFFF
 
