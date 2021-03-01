@@ -111,6 +111,7 @@ fileread(struct file* f, char* addr, ssize_t n)
         return r;
     }
     panic("\tfileread: unsupported type.\n");
+    return 0;
 }
 
 /*
@@ -146,4 +147,5 @@ filewrite(struct file* f, char* addr, ssize_t n)
         return i == n ? n : -1;
     }
     panic("\tfilewrite: unsupported type.\n");
+    return 0;
 }

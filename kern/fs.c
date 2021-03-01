@@ -77,6 +77,7 @@ balloc(uint32_t dev)
         brelse(bp);
     }
     panic("\tballoc: out of blocks.\n");
+    return 0;
 }
 
 /*
@@ -208,6 +209,7 @@ ialloc(uint32_t dev, uint16_t type)
         brelse(bp);
     }
     panic("\tialloc: no inodes.\n");
+    return 0;
 }
 
 /*
@@ -399,6 +401,7 @@ bmap(struct inode* ip, uint32_t bn)
         return addr;
     }
     panic("\tbmap: out of range.\n");
+    return 0;
 }
 
 /*
@@ -620,7 +623,7 @@ namex(char* path, int nameiparent, char* name)
     struct inode* ip = NULL;
     ip = (*path == '/') ? iget(ROOTDEV, ROOTINO) : idup(thisproc()->cwd);
 
-    while (path = skipelem(path, name)) {
+    while ((path = skipelem(path, name))) {
         ilock(ip);
         if (ip->type != T_DIR) {
             iunlockput(ip);

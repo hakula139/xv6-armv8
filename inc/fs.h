@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include "types.h"
+
 // Kernel only
 #define NDEV        10                 // Maximum major device number
 #define NINODE      50                 // Maximum number of active i-nodes
@@ -73,6 +75,8 @@ struct dirent {
     uint16_t inum;
     char name[DIRSIZ];
 };
+
+struct stat;
 
 #define T_DIR  1  // Directory
 #define T_FILE 2  // File

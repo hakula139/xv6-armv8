@@ -5,7 +5,9 @@
 
 #include "arm.h"
 #include "file.h"
+#include "proc.h"
 #include "spinlock.h"
+#include "uart.h"
 
 #define CONSOLE 1
 

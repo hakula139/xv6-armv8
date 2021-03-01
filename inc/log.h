@@ -1,7 +1,7 @@
 #ifndef INC_LOG_H_
 #define INC_LOG_H_
 
-extern struct buf;
+struct buf;
 
 void initlog(int);
 void log_write(struct buf*);

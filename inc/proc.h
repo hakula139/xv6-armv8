@@ -80,5 +80,6 @@ void sleep(void*, struct spinlock*);
 int fork();
 int wait();
 void wakeup(void*);
+void procdump();
 
 #endif  // INC_PROC_H_
