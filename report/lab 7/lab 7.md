@@ -501,6 +501,7 @@ ialloc(uint32_t dev, uint16_t type)
         brelse(bp);
     }
     panic("\tialloc: no inodes.\n");
+    return 0;
 }
 ```
 
@@ -874,6 +875,7 @@ bmap(struct inode* ip, uint32_t bn)
         return addr;
     }
     panic("\tbmap: out of range.\n");
+    return 0;
 }
 ```
 
@@ -903,6 +905,7 @@ balloc(uint32_t dev)
         brelse(bp);
     }
     panic("\tballoc: out of blocks.\n");
+    return 0;
 }
 ```
 
@@ -1164,6 +1167,7 @@ fileread(struct file* f, char* addr, ssize_t n)
         return r;
     }
     panic("\tfileread: unsupported type.\n");
+    return 0;
 }
 ```
 
@@ -1207,6 +1211,7 @@ filewrite(struct file* f, char* addr, ssize_t n)
         return i == n ? n : -1;
     }
     panic("\tfilewrite: unsupported type.\n");
+    return 0;
 }
 ```
 

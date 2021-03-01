@@ -365,5 +365,5 @@ wait()
 void
 procdump()
 {
-    panic("unimplemented");
+    panic("\tprocdump: unimplemented.\n");
 }

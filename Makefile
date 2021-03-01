@@ -35,9 +35,8 @@ CFLAGS := -Wall -g -O2 \
           -static -fno-builtin -nostdlib -nostdinc -ffreestanding -nostartfiles \
           -mgeneral-regs-only \
           -MMD -MP \
-          $(CORTEX_A53_FLAGS)
-
-CFLAGS += -Iinc -Ilibc/obj/include -Ilibc/arch/aarch64 -Ilibc/include
+          $(CORTEX_A53_FLAGS) \
+          -Iinc -Ilibc/obj/include -Ilibc/arch/aarch64 -Ilibc/include
 
 ASFLAGS := -march=armv8-a
 
