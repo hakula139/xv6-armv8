@@ -82,25 +82,4 @@ struct stat;
 #define T_FILE 2  // File
 #define T_DEV  3  // Device
 
-void readsb(int, struct superblock*);
-
-void iinit(int);
-struct inode* ialloc(uint32_t, uint16_t);
-void iupdate(struct inode*);
-struct inode* idup(struct inode*);
-void ilock(struct inode*);
-void iunlock(struct inode*);
-void iput(struct inode*);
-void iunlockput(struct inode*);
-void stati(struct inode*, struct stat*);
-ssize_t readi(struct inode*, char*, size_t, size_t);
-ssize_t writei(struct inode*, char*, size_t, size_t);
-
-int namecmp(const char*, const char*);
-struct inode* dirlookup(struct inode*, char*, size_t*);
-int dirlink(struct inode*, char*, uint32_t);
-
-struct inode* namei(char*);
-struct inode* nameiparent(char*, char*);
-
 #endif  // INC_FS_H_

@@ -4,7 +4,6 @@
 
 #include "file.h"
 #include "console.h"
-#include "fs.h"
 #include "log.h"
 #include "sleeplock.h"
 #include "spinlock.h"
