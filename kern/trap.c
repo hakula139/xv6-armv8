@@ -1,5 +1,7 @@
 #include "trap.h"
 
+#include <syscall.h>
+
 #include "arm.h"
 #include "clock.h"
 #include "console.h"
@@ -7,7 +9,6 @@
 #include "peripherals/irq.h"
 #include "proc.h"
 #include "sd.h"
-#include "syscall.h"
 #include "sysregs.h"
 #include "timer.h"
 #include "uart.h"
@@ -42,11 +43,11 @@ interrupt(struct trapframe* tf)
             sd_intr();
         } else {
             cprintf(
-                "\tinterrupt: unexpected gpu intr p1 %x, p2 %x, sd %d, omitted.\n",
+                "interrupt: unexpected gpu intr p1 %x, p2 %x, sd %d, omitted.\n",
                 p1, p2, p2 & VC_ARASANSDIO_INT);
         }
     } else {
-        cprintf("\tinterrupt: unexpected interrupt at CPU %d\n", cpuid());
+        cprintf("interrupt: unexpected interrupt at CPU %d\n", cpuid());
     }
 }
 
@@ -60,14 +61,9 @@ trap(struct trapframe* tf)
     case EC_SVC64:
         if (!iss) {
             /* Jump to syscall to handle the system call from user process */
-            struct proc* p = thisproc();
-            if (p->killed) exit(1);
-            p->tf = tf;
-            syscall();
-            if (p->killed) exit(1);
-            break;
+            syscall1(tf);
         } else {
-            cprintf("\ttrap: unexpected svc iss 0x%x\n", iss);
+            cprintf("trap: unexpected svc iss 0x%x\n", iss);
         }
         break;
     default: panic("\ttrap: unexpected irq.\n");

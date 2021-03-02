@@ -2,6 +2,7 @@
 
 #include "arm.h"
 #include "console.h"
+#include "file.h"
 #include "kalloc.h"
 #include "mmu.h"
 #include "spinlock.h"
@@ -337,6 +338,25 @@ yield()
 }
 
 /*
+ * Grow current process's memory by n bytes.
+ * Return 0 on success, -1 on failure.
+ */
+int
+growproc(int n)
+{
+    struct proc* p = thisproc();
+    uint64_t sz = p->sz;
+    if (n > 0) {
+        if (!(sz = uvm_alloc(p->pgdir, sz, sz + n))) return -1;
+    } else if (n < 0) {
+        if (!(sz = uvm_dealloc(p->pgdir, sz, sz + n))) return -1;
+    }
+    p->sz = sz;
+    uvm_switch(p);
+    return 0;
+}
+
+/*
  * Create a new process copying p as the parent.
  * Sets up stack to return as if from system call.
  * Caller must set state of returned proc to RUNNABLE.
@@ -344,7 +364,47 @@ yield()
 int
 fork()
 {
-    /* TODO: Your code here. */
+    // Allocate process
+    struct proc* np = proc_alloc();
+    if (!np) return -1;
+
+    struct proc* p = thisproc();
+
+    // Copy user memory from parent to child
+    if (uvm_copy(p->pgdir, np->pgdir, p->sz) < 0) {
+        proc_free(np);
+        release(&np->lock);
+        return -1;
+    }
+    np->sz = p->sz;
+
+    // Copy saved user registers
+    memcpy(np->tf, p->tf, sizeof(*p->tf));
+
+    // Cause fork to return 0 in the child
+    np->tf->x0 = 0;
+
+    // Increment reference counts on open file descriptors
+    for (int i = 0; i < NOFILE; ++i) {
+        if (p->ofile[i]) np->ofile[i] = filedup(p->ofile[i]);
+    }
+    np->cwd = idup(p->cwd);
+
+    strncpy(np->name, p->name, sizeof(p->name));
+
+    int pid = np->pid;
+
+    release(&np->lock);
+
+    acquire(&wait_lock);
+    np->parent = p;
+    release(&wait_lock);
+
+    acquire(&np->lock);
+    np->state = RUNNABLE;
+    release(&np->lock);
+
+    return pid;
 }
 
 /*
@@ -354,7 +414,40 @@ fork()
 int
 wait()
 {
-    /* TODO: Your code here. */
+    struct proc* p = thisproc();
+    acquire(&wait_lock);
+
+    while (1) {
+        // Scan through table looking for exited children.
+        int havekids = 0;
+        for (struct proc* np = ptable.proc; np < &ptable.proc[NPROC]; ++np) {
+            if (np->parent != p) continue;
+            havekids = 1;
+            if (np->state == ZOMBIE) {
+                // Found one.
+                int pid = np->pid;
+                kfree(np->kstack);
+                np->kstack = NULL;
+                vm_free(np->pgdir, 4);
+                np->pid = 0;
+                np->parent = NULL;
+                np->name[0] = '\0';
+                np->killed = 0;
+                np->state = UNUSED;
+                release(&wait_lock);
+                return pid;
+            }
+        }
+
+        // No point waiting if we don't have any children.
+        if (!havekids || p->killed) {
+            release(&wait_lock);
+            return -1;
+        }
+
+        // Wait for children to exit.
+        sleep(p, &wait_lock);
+    }
 }
 
 /*

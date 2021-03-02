@@ -66,12 +66,33 @@ static int
 map_region(uint64_t* pgdir, void* va, uint64_t size, uint64_t pa, int64_t perm)
 {
     for (uint64_t i = 0; i < size; i += PGSIZE) {
-        uint64_t* pte = pgdir_walk(pgdir, va + i, 1);
+        uint64_t* pte = pgdir_walk(pgdir, (void*)va + i, 1);
         if (!pte) return 1;
         *pte = V2P(PTE_ADDR(pa + i)) | perm | PTE_P | PTE_TABLE
                | (MT_NORMAL << 2) | PTE_AF | PTE_SH;
     }
     return 0;
+}
+
+/*
+ * Remove npages of mappings starting from va. va must be
+ * page-aligned. The mappings must exist.
+ * Optionally free the physical memory.
+ */
+static void
+uvm_unmap(uint64_t* pgdir, uint64_t va, uint64_t npages, int do_free)
+{
+    if (va % PGSIZE) panic("\tuvm_unmap: not aligned.\n");
+
+    uint64_t size = npages * PGSIZE;
+    for (uint64_t i = 0; i < size; i += PGSIZE) {
+        uint64_t* pte = pgdir_walk(pgdir, (void*)va + i, 0);
+        if (!pte) panic("\tuvmunmap: pgdir_walk error.\n");
+        if (!(*pte & PTE_P)) panic("\tuvmunmap: not mapped.\n");
+        if (PTE_FLAGS(*pte) == PTE_P) panic("\tuvmunmap: not a leaf.\n");
+        if (do_free) kfree((char*)V2P(PTE_ADDR(*pte)));
+        *pte = 0;
+    }
 }
 
 /*
@@ -145,6 +166,50 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
 }
 
 /*
+ * Allocate PTEs and physical memory to grow process from oldsz to
+ * newsz, which need not be page aligned.  Returns new size or 0 on error.
+ */
+uint64_t
+uvm_alloc(uint64_t* pgdir, uint64_t oldsz, uint64_t newsz)
+{
+    if (newsz < oldsz) return oldsz;
+
+    for (uint64_t va = oldsz; va < newsz; va += PGSIZE) {
+        char* mem = kalloc();
+        if (!mem) {
+            uvm_dealloc(pgdir, va, oldsz);
+            return 0;
+        }
+        memset(mem, 0, PGSIZE);
+        if (map_region(
+                pgdir, (void*)va, PGSIZE, (uint64_t)mem,
+                PTE_USER | PTE_RW | PTE_PAGE)) {
+            kfree(mem);
+            uvm_dealloc(pgdir, va, oldsz);
+            return 0;
+        }
+    }
+    return newsz;
+}
+
+/*
+ * Deallocate user pages to bring the process size from oldsz to
+ * newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+ * need to be less than oldsz.  oldsz can be larger than the actual
+ * process size.  Returns the new process size.
+ */
+uint64_t
+uvm_dealloc(uint64_t* pgdir, uint64_t oldsz, uint64_t newsz)
+{
+    if (newsz >= oldsz) return oldsz;
+
+    int npages = (oldsz - newsz) / PGSIZE;
+    uvm_unmap(pgdir, newsz, npages, 1);
+
+    return newsz;
+}
+
+/*
  * Switch to the process's own page table for execution of it.
  */
 void
@@ -154,5 +219,34 @@ uvm_switch(struct proc* p)
     if (!p->kstack) panic("\tuvm_switch: no kstack.\n");
     if (!p->pgdir) panic("\tuvm_switch: no pgdir.\n");
 
-    lttbr0(V2P(p->pgdir));  // Switch to process's address space
+    lttbr0(V2P(p->pgdir));  // switch to process's address space
+}
+
+/*
+ * Given a parent process's page table, copy its memory into a child's page
+ * table. Copies both the page table and the physical memory. Returns 0 on
+ * success, -1 on failure. Frees any allocated pages on failure.
+ */
+int
+uvm_copy(uint64_t* old, uint64_t* new, uint64_t sz)
+{
+    for (uint64_t i = 0; i < sz; i += PGSIZE) {
+        uint64_t* pte = pgdir_walk(old, (void*)i, 0);
+        if (!pte) panic("\tuvm_copy: pte should exist.\n");
+        if (!(*pte & PTE_P)) panic("\tuvm_copy: page not present.\n");
+        uint64_t pa = V2P(PTE_ADDR(*pte));
+        uint64_t flags = PTE_FLAGS(*pte);
+        char* mem = kalloc();
+        if (!mem) {
+            uvm_unmap(new, 0, i / PGSIZE, 1);
+            return -1;
+        }
+        memmove(mem, (void*)pa, PGSIZE);
+        if (map_region(new, (void*)i, PGSIZE, (uint64_t)mem, flags) != 0) {
+            kfree(mem);
+            uvm_unmap(new, 0, i / PGSIZE, 1);
+            return -1;
+        }
+    }
+    return 0;
 }
