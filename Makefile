@@ -121,9 +121,8 @@ gdb:
 
 init:
 	git submodule update --init --recursive
-	(cd libc && export CROSS_COMPILE=$(CROSS) && ./configure --target=$(ARCH))
+	(cd libc && export CROSS_COMPILE=$(CROSS) && ./configure --target=$(ARCH) && make -j5)
 
 clean:
 	$(MAKE) -C user clean
-	$(MAKE) -C libc clean
 	rm -rf $(BUILD_DIR)
