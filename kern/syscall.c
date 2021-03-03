@@ -99,29 +99,31 @@ argstr(int n, char** pp)
     return fetchstr(addr, pp);
 }
 
-static int (*syscalls[])() = {
-    [SYS_set_tid_address] sys_gettid,
-    [SYS_gettid] sys_gettid,
-    [SYS_ioctl] sys_ioctl,
-    [SYS_rt_sigprocmask] sys_rt_sigprocmask,
-    [SYS_brk] sys_brk,
-    [SYS_execve] sys_exec,
-    [SYS_sched_yield] sys_yield,
-    [SYS_clone] sys_clone,
-    [SYS_wait4] sys_wait4,
+typedef int (*Func)();
+
+static Func syscalls[] = {
+    [SYS_set_tid_address] = sys_gettid,
+    [SYS_gettid] = sys_gettid,
+    [SYS_ioctl] = sys_ioctl,
+    [SYS_rt_sigprocmask] = sys_rt_sigprocmask,
+    [SYS_brk] = (Func)sys_brk,
+    [SYS_execve] = sys_exec,
+    [SYS_sched_yield] = sys_yield,
+    [SYS_clone] = sys_clone,
+    [SYS_wait4] = sys_wait4,
     // FIXME: exit_group should kill every thread in the current thread group.
-    [SYS_exit_group] sys_exit,
-    [SYS_exit] sys_exit,
-    [SYS_dup] sys_dup,
-    [SYS_chdir] sys_chdir,
-    [SYS_fstat] sys_fstat,
-    [SYS_newfstatat] sys_fstatat,
-    [SYS_mkdirat] sys_mkdirat,
-    [SYS_mknodat] sys_mknodat,
-    [SYS_openat] sys_openat,
-    [SYS_writev] sys_writev,
-    [SYS_read] sys_read,
-    [SYS_close] sys_close,
+    [SYS_exit_group] = sys_exit,
+    [SYS_exit] = sys_exit,
+    [SYS_dup] = sys_dup,
+    [SYS_chdir] = sys_chdir,
+    [SYS_fstat] = sys_fstat,
+    [SYS_newfstatat] = sys_fstatat,
+    [SYS_mkdirat] = sys_mkdirat,
+    [SYS_mknodat] = sys_mknodat,
+    [SYS_openat] = sys_openat,
+    [SYS_writev] = (Func)sys_writev,
+    [SYS_read] = (Func)sys_read,
+    [SYS_close] = sys_close,
 };
 
 int
@@ -135,6 +137,7 @@ syscall1(struct trapframe* tf)
         return syscalls[sysno]();
     } else {
         cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
+        while (1) {}
         return -1;
     }
     return 0;

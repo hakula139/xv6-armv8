@@ -9,6 +9,7 @@
 #include "peripherals/irq.h"
 #include "proc.h"
 #include "sd.h"
+#include "syscall1.h"
 #include "sysregs.h"
 #include "timer.h"
 #include "uart.h"
