@@ -14,6 +14,8 @@
 int
 execve(char* path, char* const argv[], char* const envp[])
 {
+    cprintf("exec: start '%s'.\n", path);
+
     // Read program file.
 
     begin_op();
@@ -158,6 +160,8 @@ execve(char* path, char* const argv[], char* const envp[])
     p->tf->elr_el1 = elf.e_entry;
     uvm_switch(p);
     if (old_pgdir) vm_free(old_pgdir, 4);
+
+    cprintf("exec: end '%s'.\n", path);
     return argc;
 
 bad:
@@ -166,5 +170,7 @@ bad:
         iunlockput(ip);
         end_op();
     }
+
+    cprintf("exec: failed to run '%s'.\n", path);
     return -1;
 }

@@ -29,7 +29,6 @@ main()
         timer_init();
         user_init();
         sd_init();
-        sd_test();
         started = 1;  // allow APs to run
     } else {
         while (!started) {}
