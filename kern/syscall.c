@@ -16,9 +16,9 @@
 int
 fetchint(uint64_t addr, int64_t* ip)
 {
-    struct proc* proc = thisproc();
+    struct proc* p = thisproc();
+    if (addr >= p->sz || addr + 8 > p->sz) return -1;
 
-    if (addr >= proc->sz || addr + 8 > proc->sz) { return -1; }
     *ip = *(int64_t*)(addr);
     return 0;
 }
@@ -31,18 +31,14 @@ fetchint(uint64_t addr, int64_t* ip)
 int
 fetchstr(uint64_t addr, char** pp)
 {
-    char *s, *ep;
-    struct proc* proc = thisproc();
-
-    if (addr >= proc->sz) { return -1; }
+    struct proc* p = thisproc();
+    if (addr >= p->sz) return -1;
 
     *pp = (char*)addr;
-    ep = (char*)proc->sz;
-
-    for (s = *pp; s < ep; s++) {
-        if (*s == 0) { return s - *pp; }
+    char* ep = (char*)p->sz;
+    for (char* s = *pp; s < ep; ++s) {
+        if (*s == 0) return s - *pp;
     }
-
     return -1;
 }
 
@@ -55,11 +51,9 @@ int
 argint(int n, uint64_t* ip)
 {
     if (n > 3) panic("\targint: too many system call parameters.\n");
+    struct proc* p = thisproc();
 
-    struct proc* proc = thisproc();
-
-    *ip = *(&proc->tf->x1 + n);
-
+    *ip = *(&p->tf->x1 + n);
     return 0;
 }
 
@@ -72,12 +66,10 @@ int
 argptr(int n, char** pp, int size)
 {
     uint64_t i;
+    if (argint(n, &i) < 0) return -1;
 
-    if (argint(n, &i) < 0) { return -1; }
-
-    struct proc* proc = thisproc();
-
-    if ((uint64_t)i >= proc->sz || (uint64_t)i + size > proc->sz) { return -1; }
+    struct proc* p = thisproc();
+    if ((uint64_t)i >= p->sz || (uint64_t)i + size > p->sz) return -1;
 
     *pp = (char*)i;
     return 0;
@@ -93,9 +85,7 @@ int
 argstr(int n, char** pp)
 {
     uint64_t addr;
-
-    if (argint(n, &addr) < 0) { return -1; }
-
+    if (argint(n, &addr) < 0) return -1;
     return fetchstr(addr, pp);
 }
 
@@ -137,6 +127,7 @@ syscall1(struct trapframe* tf)
         return syscalls[sysno]();
     } else {
         cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
+        procdump();
         while (1) {}
         return -1;
     }
