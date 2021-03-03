@@ -6,6 +6,7 @@
 #include "string.h"
 #include "syscall1.h"
 #include "trap.h"
+#include "types.h"
 
 int
 sys_exec()
@@ -17,7 +18,7 @@ sys_exec()
     if (argstr(0, &path) < 0 || argint(1, &uargv) < 0) return -1;
     memset(argv, 0, sizeof(argv));
     for (int i = 0;; ++i) {
-        if (i >= NELEM(argv)) return -1;
+        if (i >= ARRAY_SIZE(argv)) return -1;
         if (fetchint(uargv + sizeof(uint64_t) * i, &uarg) < 0) return -1;
         if (!uarg) {
             argv[i] = NULL;

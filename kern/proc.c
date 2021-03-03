@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "string.h"
 #include "trap.h"
+#include "types.h"
 #include "vm.h"
 
 struct cpu cpus[NCPU];
@@ -467,7 +468,7 @@ procdump()
     for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
         if (p->state == UNUSED) continue;
         char* state =
-            (p->state >= 0 && p->state < NELEM(states) && states[p->state])
+            (p->state >= 0 && p->state < ARRAY_SIZE(states) && states[p->state])
                 ? states[p->state]
                 : "UNKNOWN";
         cprintf("[%s] %d (%s)\n", state, p->pid, p->name);

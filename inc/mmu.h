@@ -45,8 +45,6 @@
 /* Address in page table or page directory entry */
 #define PTE_ADDR(pte)      ((uint64_t)(pte) & ~(PGSIZE - 1))
 #define PTE_FLAGS(pte)     ((uint64_t)(pte) & (PGSIZE - 1))
-#define PG_ROUNDUP(addr)   (((addr) + PGSIZE - 1) & ~(PGSIZE - 1))
-#define PG_ROUNDDOWN(addr) PTE_ADDR(addr)
 
 /* P2061 */
 #define MM_TYPE_BLOCK PTE_P | PTE_BLOCK

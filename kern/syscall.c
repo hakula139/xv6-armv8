@@ -4,6 +4,7 @@
 #include "proc.h"
 #include "string.h"
 #include "syscall1.h"
+#include "types.h"
 
 /*
  * User code makes a system call with SVC.
@@ -89,14 +90,12 @@ argstr(int n, char** pp)
     return fetchstr(addr, pp);
 }
 
-typedef int (*Func)();
-
-static Func syscalls[] = {
+static func syscalls[] = {
     [SYS_set_tid_address] = sys_gettid,
     [SYS_gettid] = sys_gettid,
     [SYS_ioctl] = sys_ioctl,
     [SYS_rt_sigprocmask] = sys_rt_sigprocmask,
-    [SYS_brk] = (Func)sys_brk,
+    [SYS_brk] = (func)sys_brk,
     [SYS_execve] = sys_exec,
     [SYS_sched_yield] = sys_yield,
     [SYS_clone] = sys_clone,
@@ -111,8 +110,8 @@ static Func syscalls[] = {
     [SYS_mkdirat] = sys_mkdirat,
     [SYS_mknodat] = sys_mknodat,
     [SYS_openat] = sys_openat,
-    [SYS_writev] = (Func)sys_writev,
-    [SYS_read] = (Func)sys_read,
+    [SYS_writev] = (func)sys_writev,
+    [SYS_read] = (func)sys_read,
     [SYS_close] = sys_close,
 };
 
@@ -122,7 +121,7 @@ syscall1(struct trapframe* tf)
     struct proc* p = thisproc();
     p->tf = tf;
     int sysno = tf->x8;
-    if (sysno >= 0 && sysno < NELEM(syscalls) && syscalls[sysno]) {
+    if (sysno >= 0 && sysno < ARRAY_SIZE(syscalls) && syscalls[sysno]) {
         cprintf("syscall: syscall %d from proc %d\n", sysno, p->pid);
         return syscalls[sysno]();
     } else {

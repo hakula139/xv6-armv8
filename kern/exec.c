@@ -87,7 +87,7 @@ execve(char* path, char* const argv[], char* const envp[])
 
     // Allocate two pages at the next page boundary.
     // Make the first inaccessible. Use the second as the user stack.
-    sz = PG_ROUNDUP(sz);
+    sz = ROUNDUP(sz, PGSIZE);
     sz = uvm_alloc(pgdir, sz, sz + 2 * PGSIZE);
     if (!sz) {
         cprintf("exec: failed to allocate uvm.\n");

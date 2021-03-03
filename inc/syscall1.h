@@ -6,7 +6,6 @@
 #include "trap.h"
 #include "types.h"
 
-#define NELEM(x) (sizeof(x) / sizeof((x)[0]))
 #define MAXARG   32
 
 // kern/syscall.c
