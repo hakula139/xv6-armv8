@@ -62,7 +62,7 @@ KERN_ELF := $(BUILD_DIR)/kernel8.elf
 KERN_IMG := $(BUILD_DIR)/kernel8.img
 SD_IMG := $(BUILD_DIR)/sd.img
 
-.PHONY: all init clean
+.PHONY: all init clean user
 
 all:
 	$(MAKE) -C user
@@ -121,7 +121,10 @@ gdb:
 
 init:
 	git submodule update --init --recursive
-	(cd libc && export CROSS_COMPILE=$(CROSS) && ./configure --target=$(ARCH) && make -j5)
+	(cd libc && export CROSS_COMPILE=$(CROSS) && ./configure --target=$(ARCH) && $(MAKE) -j5)
+
+user:
+	(cd user && $(MAKE))
 
 clean:
 	$(MAKE) -C user clean
