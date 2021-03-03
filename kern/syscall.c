@@ -8,7 +8,7 @@
 
 /*
  * User code makes a system call with SVC.
- * System call number in r0.
+ * System call number in r8.
  * Arguments on the stack, from the user call to the C
  * library system call function.
  */
@@ -120,7 +120,7 @@ syscall1(struct trapframe* tf)
 {
     struct proc* p = thisproc();
     p->tf = tf;
-    int sysno = tf->x8;
+    uint64_t sysno = tf->x8;
     if (sysno >= 0 && sysno < ARRAY_SIZE(syscalls) && syscalls[sysno]) {
         cprintf("syscall: syscall %d from proc %d\n", sysno, p->pid);
         return syscalls[sysno]();
