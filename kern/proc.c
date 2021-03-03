@@ -29,7 +29,7 @@ extern void usertrapret(struct trapframe*);
 extern void trapret();
 void swtch(struct context**, struct context*);
 
-int
+static int
 pid_next()
 {
     acquire(&pid_lock);

@@ -25,7 +25,7 @@
 
 #include "buf.h"
 #include "console.h"
-#include "fs.h"
+#include "file.h"
 #include "sleeplock.h"
 #include "spinlock.h"
 #include "string.h"

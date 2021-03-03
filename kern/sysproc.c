@@ -13,7 +13,8 @@ sys_exec()
 {
     char* path;
     char* argv[MAXARG];
-    uint64_t uargv, uarg;
+    uint64_t uargv;
+    int64_t uarg;
 
     if (argstr(0, &path) < 0 || argint(1, &uargv) < 0) return -1;
     memset(argv, 0, sizeof(argv));
@@ -49,8 +50,7 @@ sys_brk()
 int
 sys_clone()
 {
-    void* childstk;
-    uint64_t flag;
+    uint64_t flag, childstk;
     if (argint(0, &flag) < 0 || argint(1, &childstk) < 0) return -1;
     if (flag != 17) {
         cprintf("sys_clone: flags other than SIGCHLD are not supported.\n");
@@ -62,9 +62,7 @@ sys_clone()
 int
 sys_wait4()
 {
-    int64_t pid, opt;
-    int* wstatus;
-    void* rusage;
+    uint64_t pid, wstatus, opt, rusage;
 
     if (argint(0, &pid) < 0 || argint(1, &wstatus) < 0 || argint(2, &opt) < 0
         || argint(3, &rusage) < 0)

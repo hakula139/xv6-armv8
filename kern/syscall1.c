@@ -20,6 +20,7 @@ sys_ioctl()
 {
     if (thisproc()->tf->x1 == 0x5413) return 0;
     panic("\tsys_ioctl: unimplemented.\n");
+    return 0;
 }
 
 /*

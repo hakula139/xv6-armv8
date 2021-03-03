@@ -34,7 +34,6 @@ struct context {
     uint64_t x26;
     uint64_t x27;
     uint64_t x28;
-
     uint64_t x29;  // Frame Pointer
     uint64_t x30;  // Procedure Link Register
 };
@@ -74,12 +73,13 @@ thisproc()
 void proc_init();
 void user_init();
 void scheduler();
-void yield();
 void exit(int);
 void sleep(void*, struct spinlock*);
+void wakeup(void*);
+void yield();
+int growproc(int);
 int fork();
 int wait();
-void wakeup(void*);
 void procdump();
 
 #endif  // INC_PROC_H_

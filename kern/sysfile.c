@@ -27,9 +27,9 @@ struct iovec {
  * and return both the descriptor and the corresponding struct file.
  */
 static int
-argfd(int n, int64_t* pfd, struct file** pf)
+argfd(int n, uint64_t* pfd, struct file** pf)
 {
-    int64_t fd;
+    uint64_t fd;
     struct file* f;
 
     if (argint(n, &fd) < 0) return -1;
@@ -74,8 +74,8 @@ ssize_t
 sys_read()
 {
     struct file* f;
-    int n;
-    uint64_t p;
+    uint64_t n;
+    char* p;
 
     if (argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
         return -1;
@@ -86,8 +86,8 @@ ssize_t
 sys_write()
 {
     struct file* f;
-    int n;
-    uint64_t p;
+    uint64_t n;
+    char* p;
 
     if (argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
         return -1;
@@ -98,10 +98,10 @@ ssize_t
 sys_writev()
 {
     struct file* f;
-    int64_t fd, iovcnt;
+    uint64_t fd, iovcnt;
     struct iovec* iov;
     if (argfd(0, &fd, &f) < 0 || argint(2, &iovcnt) < 0
-        || argptr(1, &iov, iovcnt * sizeof(struct iovec)) < 0) {
+        || argptr(1, (char**)&iov, iovcnt * sizeof(struct iovec)) < 0) {
         return -1;
     }
 
@@ -115,7 +115,7 @@ sys_writev()
 int
 sys_close()
 {
-    int fd;
+    uint64_t fd;
     struct file* f;
     struct proc* p = thisproc();
 
@@ -131,19 +131,20 @@ sys_fstat()
     struct file* f;
     struct stat* st;  // user pointer to struct stat
 
-    if (argfd(0, 0, &f) < 0 || argptr(1, &st, sizeof(*st)) < 0) return -1;
+    if (argfd(0, 0, &f) < 0 || argptr(1, (char**)&st, sizeof(*st)) < 0)
+        return -1;
     return filestat(f, st);
 }
 
 int
 sys_fstatat()
 {
-    int64_t dirfd, flags;
+    uint64_t dirfd, flags;
     char* path;
     struct stat* st;
 
     if (argint(0, &dirfd) < 0 || argstr(1, &path) < 0
-        || argptr(2, &st, sizeof(*st)) < 0 || argint(3, &flags) < 0)
+        || argptr(2, (char**)&st, sizeof(*st)) < 0 || argint(3, &flags) < 0)
         return -1;
 
     if (dirfd != AT_FDCWD) {
@@ -214,7 +215,7 @@ int
 sys_openat()
 {
     char* path;
-    int64_t dirfd, omode;
+    uint64_t dirfd, omode;
 
     if (argint(0, &dirfd) < 0 || argstr(1, &path) < 0 || argint(2, &omode) < 0)
         return -1;
@@ -273,7 +274,7 @@ sys_openat()
 int
 sys_mkdirat()
 {
-    int64_t dirfd, mode;
+    uint64_t dirfd, mode;
     char* path;
 
     if (argint(0, &dirfd) < 0 || argstr(1, &path) < 0 || argint(2, &mode) < 0)
@@ -302,7 +303,7 @@ int
 sys_mknodat()
 {
     char* path;
-    int64_t dirfd, major, minor;
+    uint64_t dirfd, major, minor;
 
     if (argint(0, &dirfd) < 0 || argstr(1, &path) < 0 || argint(2, &major) < 0
         || argint(3, &minor))
