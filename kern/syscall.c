@@ -123,7 +123,8 @@ syscall1(struct trapframe* tf)
     uint64_t sysno = tf->x8;
     if (sysno >= 0 && sysno < ARRAY_SIZE(syscalls) && syscalls[sysno]) {
         cprintf("syscall: syscall %d from proc %d\n", sysno, p->pid);
-        return syscalls[sysno]();
+        tf->x0 = syscalls[sysno]();
+        return tf->x0;
     } else {
         cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
         while (1) {}

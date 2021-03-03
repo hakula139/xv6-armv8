@@ -62,7 +62,7 @@ trap(struct trapframe* tf)
     case EC_SVC64:
         if (!iss) {
             /* Jump to syscall to handle the system call from user process */
-            syscall1(tf);
+            tf->x0 = syscall1(tf);
         } else {
             cprintf("trap: unexpected svc iss 0x%x\n", iss);
         }
