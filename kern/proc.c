@@ -458,5 +458,19 @@ wait()
 void
 procdump()
 {
-    panic("\tprocdump: unimplemented.\n");
+    static char* states[] = {
+        [UNUSED] "UNUSED",   [SLEEPING] "SLEEPING", [RUNNABLE] "RUNNABLE",
+        [RUNNING] "RUNNING", [ZOMBIE] "ZOMBIE",
+    };
+
+    cprintf("\n====== PROCESS DUMP ======\n");
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        if (p->state == UNUSED) continue;
+        char* state =
+            (p->state >= 0 && p->state < NELEM(states) && states[p->state])
+                ? states[p->state]
+                : "UNKNOWN";
+        cprintf("[%s] %d (%s)\n", state, p->pid, p->name);
+    }
+    cprintf("====== DUMP END ======\n");
 }
