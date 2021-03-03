@@ -4,6 +4,7 @@
 #include "console.h"
 #include "file.h"
 #include "kalloc.h"
+#include "log.h"
 #include "mmu.h"
 #include "spinlock.h"
 #include "string.h"
@@ -224,13 +225,24 @@ sched()
 void
 forkret()
 {
+    static int first = 1;
     struct proc* p = thisproc();
+    struct trapframe* tf = p->tf;
 
     // Still holding p->lock from scheduler.
     release(&p->lock);
 
+    if (first) {
+        // Some initialization functions must be run in the context
+        // of a regular process (e.g., they call sleep), and thus cannot
+        // be run from main().
+        iinit(ROOTDEV);
+        initlog(ROOTDEV);
+        first = 0;
+    }
+
     // Pass trapframe pointer as an argument when calling trapret.
-    usertrapret(p->tf);
+    usertrapret(tf);
 }
 
 /*
