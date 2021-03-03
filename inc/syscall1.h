@@ -48,7 +48,7 @@ int sys_chdir();
 
 // kern/exec.c
 
-int execve(const char*, char* const*, char* const*);
+int execve(char*, char* const*, char* const*);
 
 int syscall1(struct trapframe*);
 

@@ -4,6 +4,7 @@
 
 #include "arm.h"
 #include "console.h"
+#include "file.h"
 #include "kalloc.h"
 #include "memlayout.h"
 #include "mmu.h"
@@ -53,6 +54,21 @@ pgdir_walk(uint64_t* pgdir, const void* va, int64_t alloc)
         pde = (uint64_t*)P2V(PTE_ADDR(*pde));
     }
     return &pde[PTX(3, va)];
+}
+
+/*
+ * Look up a virtual address, return the physical address,
+ * or 0 if not mapped.
+ * Can only be used to look up user pages.
+ */
+static uint64_t
+addr_walk(uint64_t* pgdir, const void* va)
+{
+    uint64_t* pte = pgdir_walk(pgdir, va, 0);
+    if (!pte) return 0;
+    if (!(*pte & PTE_P)) return 0;
+    if (!(*pte & PTE_USER)) return 0;
+    return (uint64_t)P2V(PTE_ADDR(*pte));
 }
 
 /*
@@ -116,25 +132,6 @@ vm_free(uint64_t* pgdir, int level)
     kfree((char*)pgdir);
 }
 
-void
-check_map_region()
-{
-    *((uint64_t*)P2V(0)) = 0xac;
-    char* p = kalloc();
-    memset(p, 0, PGSIZE);
-    map_region((uint64_t*)p, (void*)0x1000, PGSIZE, 0, 0);
-    asm volatile("msr ttbr0_el1, %[x]" : : [x] "r"(V2P(p)));
-
-    if (*((uint64_t*)0x1000) == 0xac) {
-        cprintf("check_map_region: passed.\n");
-    } else {
-        panic("\tcheck_map_region: failed.\n");
-    }
-
-    vm_free((uint64_t*)p, 4);
-    cprintf("check_vm_free: passed.\n");
-}
-
 /*
  * Get a new page table.
  */
@@ -163,6 +160,26 @@ uvm_init(uint64_t* pgdir, char* binary, uint64_t sz)
     map_region(
         pgdir, (void*)0, PGSIZE, (uint64_t)mem, PTE_USER | PTE_RW | PTE_PAGE);
     memmove((void*)mem, (const void*)binary, sz);
+}
+
+/*
+ * Load a program segment into pgdir.  addr must be page-aligned
+ * and the pages from addr to addr+sz must already be mapped.
+ */
+int
+uvm_load(
+    uint64_t* pgdir, char* addr, struct inode* ip, uint64_t offset, uint64_t sz)
+{
+    if ((uint64_t)addr % PGSIZE)
+        panic("\tuvm_load: addr must be page aligned.\n");
+    for (uint64_t i = 0; i < sz; i += PGSIZE) {
+        uint64_t* pte = pgdir_walk(pgdir, (void*)addr + i, 0);
+        if (!pte) panic("uvm_load: address should exist");
+        uint64_t pa = PTE_ADDR(*pte);
+        uint64_t n = (sz - i < PGSIZE) ? sz - i : PGSIZE;
+        if (readi(ip, P2V(pa), offset + i, n) != n) return -1;
+    }
+    return 0;
 }
 
 /*
@@ -249,4 +266,55 @@ uvm_copy(uint64_t* old, uint64_t* new, uint64_t sz)
         }
     }
     return 0;
+}
+
+/*
+ * Clear PTE_USER on a page. Used to create an inaccessible
+ * page beneath the user stack.
+ */
+void
+uvm_clear(uint64_t* pgdir, char* va)
+{
+    uint64_t* pte = pgdir_walk(pgdir, va, 0);
+    if (!pte) panic("\tuvm_clear: failed to locate PTE.\n");
+    *pte &= ~PTE_USER;
+}
+
+/*
+ * Copy from kernel to user.
+ * Copy len bytes from src to virtual address dstva in a given page table.
+ * Return 0 on success, -1 on error.
+ */
+int
+copyout(uint64_t* pgdir, uint64_t dstva, char* src, uint64_t len)
+{
+    for (uint64_t va0 = 0, pa0 = 0, n = 0; len > 0;
+         len -= n, src += n, dstva = va0 + PGSIZE) {
+        va0 = PTE_ADDR(dstva);
+        pa0 = addr_walk(pgdir, (void*)va0);
+        if (!pa0) return -1;
+        n = PGSIZE - (dstva - va0);
+        if (n > len) n = len;
+        memmove((void*)(pa0 + (dstva - va0)), src, n);
+    }
+    return 0;
+}
+
+void
+check_map_region()
+{
+    *((uint64_t*)P2V(0)) = 0xac;
+    char* p = kalloc();
+    memset(p, 0, PGSIZE);
+    map_region((uint64_t*)p, (void*)0x1000, PGSIZE, 0, 0);
+    asm volatile("msr ttbr0_el1, %[x]" : : [x] "r"(V2P(p)));
+
+    if (*((uint64_t*)0x1000) == 0xac) {
+        cprintf("check_map_region: passed.\n");
+    } else {
+        panic("\tcheck_map_region: failed.\n");
+    }
+
+    vm_free((uint64_t*)p, 4);
+    cprintf("check_vm_free: passed.\n");
 }
