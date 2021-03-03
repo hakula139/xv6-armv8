@@ -80,6 +80,6 @@ void yield();
 int growproc(int);
 int fork();
 int wait();
-void procdump();
+void proc_dump();
 
 #endif  // INC_PROC_H_

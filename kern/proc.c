@@ -452,16 +452,15 @@ wait()
 }
 
 /*
- * Print a process listing to console.  For debugging.
- * Runs when user types ^P on console.
+ * Print a process listing to console. For debugging.
  * No lock to avoid wedging a stuck machine further.
  */
 void
-procdump()
+proc_dump()
 {
     static char* states[] = {
-        [UNUSED] "UNUSED",   [SLEEPING] "SLEEPING", [RUNNABLE] "RUNNABLE",
-        [RUNNING] "RUNNING", [ZOMBIE] "ZOMBIE",
+        [UNUSED] "UNUSED  ",  [SLEEPING] "SLEEPING", [RUNNABLE] "RUNNABLE",
+        [RUNNING] "RUNNING ", [ZOMBIE] "ZOMBIE  ",
     };
 
     cprintf("\n====== PROCESS DUMP ======\n");
@@ -470,7 +469,7 @@ procdump()
         char* state =
             (p->state >= 0 && p->state < ARRAY_SIZE(states) && states[p->state])
                 ? states[p->state]
-                : "UNKNOWN";
+                : "UNKNOWN ";
         cprintf("[%s] %d (%s)\n", state, p->pid, p->name);
     }
     cprintf("====== DUMP END ======\n");

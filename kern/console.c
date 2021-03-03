@@ -180,7 +180,7 @@ cprintf(const char* fmt, ...)
 void
 console_intr(int (*getc)())
 {
-    int c, doprocdump = 0;
+    int c, do_proc_dump = 0;
 
     acquire(&conslock);
     if (panicked >= 0) {
@@ -192,8 +192,8 @@ console_intr(int (*getc)())
     while ((c = getc()) >= 0) {
         switch (c) {
         case C('P'):  // Process listing.
-            // procdump() locks cons.lock indirectly; invoke later
-            doprocdump = 1;
+            // proc_dump() locks cons.lock indirectly; invoke later
+            do_proc_dump = 1;
             break;
         case C('U'):  // Kill line.
             while (input.e != input.w
@@ -225,7 +225,7 @@ console_intr(int (*getc)())
     }
     release(&conslock);
 
-    if (doprocdump) procdump();
+    if (do_proc_dump) proc_dump();
 }
 
 void

@@ -126,7 +126,6 @@ syscall1(struct trapframe* tf)
         return syscalls[sysno]();
     } else {
         cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
-        procdump();
         while (1) {}
         return -1;
     }
