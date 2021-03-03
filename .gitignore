@@ -1,4 +1,5 @@
 .gdb_history
-obj
-.vscode
-user/bin
+obj/
+.vscode/
+user/bin/
+null.d
