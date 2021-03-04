@@ -225,7 +225,7 @@ sched()
 void
 forkret()
 {
-    static int first = 1;
+    volatile static int first = 1;
     struct proc* p = thisproc();
     struct trapframe* tf = p->tf;
 
@@ -236,9 +236,9 @@ forkret()
         // Some initialization functions must be run in the context
         // of a regular process (e.g., they call sleep), and thus cannot
         // be run from main().
+        first = 0;
         iinit(ROOTDEV);
         initlog(ROOTDEV);
-        first = 0;
     }
 
     // Pass trapframe pointer as an argument when calling trapret.

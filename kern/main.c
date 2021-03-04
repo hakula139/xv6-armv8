@@ -1,7 +1,9 @@
 #include <stdint.h>
 
 #include "arm.h"
+#include "buf.h"
 #include "console.h"
+#include "file.h"
 #include "kalloc.h"
 #include "proc.h"
 #include "sd.h"
@@ -27,8 +29,9 @@ main()
         lvbar(vectors);
         irq_init();
         timer_init();
-        user_init();
+        fileinit();
         sd_init();
+        user_init();
         started = 1;  // allow APs to run
     } else {
         while (!started) {}
