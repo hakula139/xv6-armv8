@@ -13,6 +13,7 @@
 #include "trap.h"
 #include "vm.h"
 
+static struct spinlock start_lock = {0};
 volatile static int started = 0;
 
 void
@@ -20,10 +21,11 @@ main()
 {
     extern char edata[], end[], vectors[];
 
-    if (cpuid() == 0) {
+    acquire(&start_lock);
+    if (!started) {
         memset(edata, 0, end - edata);
         console_init();
-        cprintf("main: [CPU 0] init started.\n");
+        cprintf("main: [CPU %d] init started.\n", cpuid());
         alloc_init();
         proc_init();
         lvbar(vectors);
@@ -33,14 +35,14 @@ main()
         binit();
         sd_init();
         user_init();
-        started = 1;  // allow APs to run
+        started = 1;
+        release(&start_lock);  // allow APs to run
     } else {
-        while (!started) {}
+        release(&start_lock);
         cprintf("main: [CPU %d] init started.\n", cpuid());
         lvbar(vectors);
         timer_init();
     }
-
     cprintf("main: [CPU %d] init success.\n", cpuid());
 
     scheduler();
