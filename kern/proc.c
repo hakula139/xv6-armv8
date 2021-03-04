@@ -191,8 +191,7 @@ scheduler()
             c->proc = p;
             uvm_switch(p);
             p->state = RUNNING;
-            cprintf(
-                "scheduler: switch to proc %d at CPU %d.\n", p->pid, cpuid());
+            // cprintf("scheduler: run proc %d at CPU %d.\n", p->pid, cpuid());
 
             swtch(&c->scheduler, p->context);
 
@@ -358,7 +357,7 @@ yield()
     struct proc* p = thisproc();
     acquire(&p->lock);
     p->state = RUNNABLE;
-    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
+    // cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
     sched();
     release(&p->lock);
 }

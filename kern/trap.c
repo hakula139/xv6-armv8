@@ -30,11 +30,11 @@ interrupt(struct trapframe* tf)
     int src = get32(IRQ_SRC_CORE(cpuid()));
     if (src & IRQ_CNTPNSIRQ) {
         timer_reset();
-        timer();
+        // timer();
         yield();
     } else if (src & IRQ_TIMER) {
         clock_reset();
-        clock();
+        // clock();
     } else if (src & IRQ_GPU) {
         int p1 = get32(IRQ_PENDING_1);
         int p2 = get32(IRQ_PENDING_2);
