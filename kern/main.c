@@ -29,7 +29,8 @@ main()
         lvbar(vectors);
         irq_init();
         timer_init();
-        fileinit();
+        file_init();
+        binit();
         sd_init();
         user_init();
         started = 1;  // allow APs to run

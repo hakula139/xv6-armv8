@@ -66,7 +66,7 @@ sys_dup()
     int fd = fdalloc(f);
     if (fd < 0) return -1;
 
-    filedup(f);
+    file_dup(f);
     return fd;
 }
 
@@ -79,7 +79,7 @@ sys_read()
 
     if (argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
         return -1;
-    return fileread(f, p, n);
+    return file_read(f, p, n);
 }
 
 ssize_t
@@ -91,7 +91,7 @@ sys_write()
 
     if (argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
         return -1;
-    return filewrite(f, p, n);
+    return file_write(f, p, n);
 }
 
 ssize_t
@@ -107,7 +107,7 @@ sys_writev()
 
     size_t tot = 0;
     for (struct iovec* p = iov; p < iov + iovcnt; ++p) {
-        tot += filewrite(f, p->iov_base, p->iov_len);
+        tot += file_write(f, p->iov_base, p->iov_len);
     }
     return tot;
 }
@@ -121,7 +121,7 @@ sys_close()
 
     if (argfd(0, &fd, &f) < 0) return -1;
     p->ofile[fd] = 0;
-    fileclose(f);
+    file_close(f);
     return 0;
 }
 
@@ -133,7 +133,7 @@ sys_fstat()
 
     if (argfd(0, 0, &f) < 0 || argptr(1, (char**)&st, sizeof(*st)) < 0)
         return -1;
-    return filestat(f, st);
+    return file_stat(f, st);
 }
 
 int
@@ -252,10 +252,10 @@ sys_openat()
         }
     }
 
-    struct file* f = filealloc();
+    struct file* f = file_alloc();
     int fd = fdalloc(f);
     if (!f || fd < 0) {
-        if (f) fileclose(f);
+        if (f) file_close(f);
         iunlockput(ip);
         end_op();
         return -1;

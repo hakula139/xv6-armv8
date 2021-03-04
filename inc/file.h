@@ -50,13 +50,13 @@ extern struct devsw devsw[];
 
 // kern/file.c
 
-void fileinit();
-struct file* filealloc();
-struct file* filedup(struct file*);
-void fileclose(struct file*);
-int filestat(struct file*, struct stat*);
-ssize_t fileread(struct file*, char*, ssize_t);
-ssize_t filewrite(struct file*, char*, ssize_t);
+void file_init();
+struct file* file_alloc();
+struct file* file_dup(struct file*);
+void file_close(struct file*);
+int file_stat(struct file*, struct stat*);
+ssize_t file_read(struct file*, char*, ssize_t);
+ssize_t file_write(struct file*, char*, ssize_t);
 
 // kern/fs.c
 

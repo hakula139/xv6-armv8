@@ -993,23 +993,23 @@ writei(struct inode* ip, char* src, size_t off, size_t n)
 
 在这一层中，我们提供了以下方法：
 
-- `fileinit`：初始化 `ftable`
-- `filealloc`：分配一个新文件
-- `filedup`：将文件的引用数（`ref`）加 `1`
-- `fileclose`：将文件的引用数（`ref`）减 `1`，当引用数降到 `0` 时关闭文件
-- `filestat`：读取文件的元数据
-- `fileread`：从文件读取数据
-- `filewrite`：写入数据到文件
+- `file_init`：初始化 `ftable`
+- `file_alloc`：分配一个新文件
+- `file_dup`：将文件的引用数（`ref`）加 `1`
+- `file_close`：将文件的引用数（`ref`）减 `1`，当引用数降到 `0` 时关闭文件
+- `file_stat`：读取文件的元数据
+- `file_read`：从文件读取数据
+- `file_write`：写入数据到文件
 
-##### 1.7.1 `fileinit`
+##### 1.7.1 `file_init`
 
-函数 `fileinit` 的主要工作是初始化 `ftable` 的锁。
+函数 `file_init` 的主要工作是初始化 `ftable` 的锁。
 
 ```c {.line-numbers}
 // kern/file.c
 
 void
-fileinit()
+file_init()
 {
     initlock(&ftable.lock, "ftable");
 }
@@ -1042,9 +1042,9 @@ struct file {
 };
 ```
 
-##### 1.7.2 `filealloc`
+##### 1.7.2 `file_alloc`
 
-函数 `filealloc` 的主要工作是在 `ftable` 中找到一个未使用的文件（`ref` 为 `0`），然后将它标记为使用中并返回。
+函数 `file_alloc` 的主要工作是在 `ftable` 中找到一个未使用的文件（`ref` 为 `0`），然后将它标记为使用中并返回。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1053,7 +1053,7 @@ struct file {
  * Allocate a file structure.
  */
 struct file*
-filealloc()
+file_alloc()
 {
     acquire(&ftable.lock);
     for (struct file* f = ftable.file; f < ftable.file + NFILE; ++f) {
@@ -1068,9 +1068,9 @@ filealloc()
 }
 ```
 
-##### 1.7.3 `filedup`
+##### 1.7.3 `file_dup`
 
-函数 `filedup` 的主要工作是将文件的引用数（`ref`）加 `1`，表示创建一个此文件的引用拷贝。
+函数 `file_dup` 的主要工作是将文件的引用数（`ref`）加 `1`，表示创建一个此文件的引用拷贝。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1079,19 +1079,19 @@ filealloc()
  * Increment ref count for file f.
  */
 struct file*
-filedup(struct file* f)
+file_dup(struct file* f)
 {
     acquire(&ftable.lock);
-    if (f->ref < 1) panic("\tfiledup: invalid file.\n");
+    if (f->ref < 1) panic("\tfile_dup: invalid file.\n");
     f->ref++;
     release(&ftable.lock);
     return f;
 }
 ```
 
-##### 1.7.4 `fileclose`
+##### 1.7.4 `file_close`
 
-函数 `fileclose` 的主要工作是将文件的引用数（`ref`）减 `1`；当引用数降到 `0` 时，对于普通文件，调用函数 `iput` 关闭文件（暂不支持其他文件类型）。
+函数 `file_close` 的主要工作是将文件的引用数（`ref`）减 `1`；当引用数降到 `0` 时，对于普通文件，调用函数 `iput` 关闭文件（暂不支持其他文件类型）。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1100,10 +1100,10 @@ filedup(struct file* f)
  * Close file f. (Decrement ref count, close when reaches 0.)
  */
 void
-fileclose(struct file* f)
+file_close(struct file* f)
 {
     acquire(&ftable.lock);
-    if (f->ref < 1) panic("\tfileclose: invalid file.\n");
+    if (f->ref < 1) panic("\tfile_close: invalid file.\n");
     if (--f->ref > 0) {
         release(&ftable.lock);
         return;
@@ -1119,14 +1119,14 @@ fileclose(struct file* f)
         iput(ff.ip);
         end_op();
     } else {
-        panic("\tfileclose: unsupported type.\n");
+        panic("\tfile_close: unsupported type.\n");
     }
 }
 ```
 
-##### 1.7.5 `filestat`
+##### 1.7.5 `file_stat`
 
-函数 `filestat` 的主要工作是调用函数 `stati` 读取文件的元数据。
+函数 `file_stat` 的主要工作是调用函数 `stati` 读取文件的元数据。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1135,7 +1135,7 @@ fileclose(struct file* f)
  * Get metadata about file f.
  */
 int
-filestat(struct file* f, struct stat* st)
+file_stat(struct file* f, struct stat* st)
 {
     if (f->type == FD_INODE) {
         ilock(f->ip);
@@ -1147,9 +1147,9 @@ filestat(struct file* f, struct stat* st)
 }
 ```
 
-##### 1.7.6 `fileread`
+##### 1.7.6 `file_read`
 
-函数 `fileread` 的主要工作是对于普通文件，调用函数 `readi` 从文件中读取数据（暂不支持其他文件类型）。
+函数 `file_read` 的主要工作是对于普通文件，调用函数 `readi` 从文件中读取数据（暂不支持其他文件类型）。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1158,7 +1158,7 @@ filestat(struct file* f, struct stat* st)
  * Read from file f.
  */
 ssize_t
-fileread(struct file* f, char* addr, ssize_t n)
+file_read(struct file* f, char* addr, ssize_t n)
 {
     if (!f->readable) return -1;
     if (f->type == FD_INODE) {
@@ -1168,14 +1168,14 @@ fileread(struct file* f, char* addr, ssize_t n)
         iunlock(f->ip);
         return r;
     }
-    panic("\tfileread: unsupported type.\n");
+    panic("\tfile_read: unsupported type.\n");
     return 0;
 }
 ```
 
-##### 1.7.7 `filewrite`
+##### 1.7.7 `file_write`
 
-函数 `filewrite` 的主要工作是对于普通文件，调用函数 `writei` 写入数据到文件（暂不支持其他文件类型）。
+函数 `file_write` 的主要工作是对于普通文件，调用函数 `writei` 写入数据到文件（暂不支持其他文件类型）。
 
 ```c {.line-numbers}
 // kern/file.c
@@ -1184,7 +1184,7 @@ fileread(struct file* f, char* addr, ssize_t n)
  * Write to file f.
  */
 ssize_t
-filewrite(struct file* f, char* addr, ssize_t n)
+file_write(struct file* f, char* addr, ssize_t n)
 {
     if (!f->writable) return -1;
     if (f->type == FD_INODE) {
@@ -1207,12 +1207,12 @@ filewrite(struct file* f, char* addr, ssize_t n)
             end_op();
 
             if (r < 0) break;
-            if (r != n1) panic("\tfilewrite: partial data written.\n");
+            if (r != n1) panic("\tfile_write: partial data written.\n");
             i += r;
         }
         return i == n ? n : -1;
     }
-    panic("\tfilewrite: unsupported type.\n");
+    panic("\tfile_write: unsupported type.\n");
     return 0;
 }
 ```
@@ -1224,10 +1224,6 @@ filewrite(struct file* f, char* addr, ssize_t n)
 ### 3. Shell
 
 > 我们已经把 xv6 的 shell 搬运到了 `user/src/sh` 目录下，但需要实现 brk 系统调用来使用 malloc，你也可以自行实现一个简单的 shell。请在 `user/src/cat` 中实现 cat 命令并在你的 shell 中执行。
-
-### 4. 测试（可选）
-
-> 文件系统最重要的能力是在系统崩溃和恢复的时候不会出现数据不一致的情况。请你设计测试来验证文件系统的崩溃一致性。
 
 ## 运行结果
 

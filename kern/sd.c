@@ -550,7 +550,6 @@ sd_init()
      * Remember to call sd_init() at somewhere.
      */
 
-    binit();
     _sd_init();
     asserts(sd_card.init, "\tFailed to initialize SD card.\n");
 

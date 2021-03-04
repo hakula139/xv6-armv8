@@ -17,17 +17,17 @@ struct {
 } ftable;
 
 void
-fileinit()
+file_init()
 {
     initlock(&ftable.lock, "ftable");
-    cprintf("fileinit: success.\n");
+    cprintf("file_init: success.\n");
 }
 
 /*
  * Allocate a file structure.
  */
 struct file*
-filealloc()
+file_alloc()
 {
     acquire(&ftable.lock);
     for (struct file* f = ftable.file; f < ftable.file + NFILE; ++f) {
@@ -45,10 +45,10 @@ filealloc()
  * Increment ref count for file f.
  */
 struct file*
-filedup(struct file* f)
+file_dup(struct file* f)
 {
     acquire(&ftable.lock);
-    if (f->ref < 1) panic("\tfiledup: invalid file.\n");
+    if (f->ref < 1) panic("\tfile_dup: invalid file.\n");
     f->ref++;
     release(&ftable.lock);
     return f;
@@ -58,10 +58,10 @@ filedup(struct file* f)
  * Close file f. (Decrement ref count, close when reaches 0.)
  */
 void
-fileclose(struct file* f)
+file_close(struct file* f)
 {
     acquire(&ftable.lock);
-    if (f->ref < 1) panic("\tfileclose: invalid file.\n");
+    if (f->ref < 1) panic("\tfile_close: invalid file.\n");
     if (--f->ref > 0) {
         release(&ftable.lock);
         return;
@@ -77,7 +77,7 @@ fileclose(struct file* f)
         iput(ff.ip);
         end_op();
     } else {
-        panic("\tfileclose: unsupported type.\n");
+        panic("\tfile_close: unsupported type.\n");
     }
 }
 
@@ -85,7 +85,7 @@ fileclose(struct file* f)
  * Get metadata about file f.
  */
 int
-filestat(struct file* f, struct stat* st)
+file_stat(struct file* f, struct stat* st)
 {
     if (f->type == FD_INODE) {
         ilock(f->ip);
@@ -100,7 +100,7 @@ filestat(struct file* f, struct stat* st)
  * Read from file f.
  */
 ssize_t
-fileread(struct file* f, char* addr, ssize_t n)
+file_read(struct file* f, char* addr, ssize_t n)
 {
     if (!f->readable) return -1;
     if (f->type == FD_INODE) {
@@ -110,7 +110,7 @@ fileread(struct file* f, char* addr, ssize_t n)
         iunlock(f->ip);
         return r;
     }
-    panic("\tfileread: unsupported type.\n");
+    panic("\tfile_read: unsupported type.\n");
     return 0;
 }
 
@@ -118,7 +118,7 @@ fileread(struct file* f, char* addr, ssize_t n)
  * Write to file f.
  */
 ssize_t
-filewrite(struct file* f, char* addr, ssize_t n)
+file_write(struct file* f, char* addr, ssize_t n)
 {
     if (!f->writable) return -1;
     if (f->type == FD_INODE) {
@@ -141,11 +141,11 @@ filewrite(struct file* f, char* addr, ssize_t n)
             end_op();
 
             if (r < 0) break;
-            if (r != n1) panic("\tfilewrite: partial data written.\n");
+            if (r != n1) panic("\tfile_write: partial data written.\n");
             i += r;
         }
         return i == n ? n : -1;
     }
-    panic("\tfilewrite: unsupported type.\n");
+    panic("\tfile_write: unsupported type.\n");
     return 0;
 }
