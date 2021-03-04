@@ -16,16 +16,31 @@ sys_exec()
     uint64_t uargv;
     int64_t uarg;
 
-    if (argstr(0, &path) < 0 || argint(1, &uargv) < 0) return -1;
+    if (argstr(0, &path) < 0 || argint(1, &uargv) < 0) {
+        cprintf("sys_exec: invalid arguments.\n");
+        return -1;
+    }
+    cprintf("sys_exec: exec '%s' uargv %lld\n", path, uargv);
+
     memset(argv, 0, sizeof(argv));
     for (int i = 0;; ++i) {
-        if (i >= ARRAY_SIZE(argv)) return -1;
-        if (fetchint(uargv + sizeof(uint64_t) * i, &uarg) < 0) return -1;
+        if (i >= ARRAY_SIZE(argv)) {
+            cprintf("sys_exec: too many arguments.\n");
+            return -1;
+        }
+        if (fetchint(uargv + sizeof(uint64_t) * i, &uarg) < 0) {
+            cprintf("sys_exec: failed to fetch uarg.\n");
+            return -1;
+        }
         if (!uarg) {
             argv[i] = NULL;
             break;
         }
-        if (fetchstr(uarg, &argv[i]) < 0) return -1;
+        if (fetchstr(uarg, &argv[i]) < 0) {
+            cprintf("sys_exec: failed to fetch argument.\n");
+            return -1;
+        }
+        cprintf("sys_exec: argv[%d] = '%s'\n", i, argv[i]);
     }
     return execve(path, argv, NULL);
 }
