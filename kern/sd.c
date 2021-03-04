@@ -665,11 +665,9 @@ sd_intr()
 void
 sd_rw(struct buf* b)
 {
-    acquiresleep(&b->lock);
     _sd_start(b);
     b->flags &= ~B_DIRTY;
     b->flags |= B_VALID;
-    brelse(b);
 }
 
 /* SD card test and benchmark. */

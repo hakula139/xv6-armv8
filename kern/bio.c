@@ -101,7 +101,8 @@ bget(uint32_t dev, uint32_t blockno)
 struct buf*
 bread(uint32_t dev, uint32_t blockno)
 {
-    struct buf* b = bget(dev, blockno);
+    const uint32_t LBA = 0x20800;  // LBA of first absolute sector in Partition 2
+    struct buf* b = bget(dev, blockno + LBA);
     if (!(b->flags & B_VALID)) sd_rw(b);
     return b;
 }
