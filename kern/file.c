@@ -20,6 +20,7 @@ void
 fileinit()
 {
     initlock(&ftable.lock, "ftable");
+    cprintf("fileinit: success.\n");
 }
 
 /*

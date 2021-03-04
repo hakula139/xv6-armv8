@@ -68,6 +68,7 @@ initlog(int dev)
     log.size = sb.nlog;
     log.dev = dev;
     recover_from_log();
+    cprintf("initlog: success.\n");
 }
 ```
 
@@ -430,6 +431,7 @@ iinit(int dev)
         "super block: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmapstart %d\n",
         sb.size, sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart,
         sb.bmapstart);
+    cprintf("iinit: success.\n");
 }
 ```
 

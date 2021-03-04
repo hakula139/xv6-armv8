@@ -66,6 +66,7 @@ initlog(int dev)
     log.size = sb.nlog;
     log.dev = dev;
     recover_from_log();
+    cprintf("initlog: success.\n");
 }
 
 /*

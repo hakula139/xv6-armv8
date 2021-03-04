@@ -52,6 +52,8 @@ binit()
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
+
+    cprintf("binit: success.\n");
 }
 
 /*
@@ -62,6 +64,7 @@ binit()
 static struct buf*
 bget(uint32_t dev, uint32_t blockno)
 {
+    cprintf("bget: dev %d blockno %d\n", dev, blockno);
     acquire(&bcache.lock);
 
     // Is the block already cached?

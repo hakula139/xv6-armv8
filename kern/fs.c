@@ -184,6 +184,8 @@ iinit(int dev)
         "super block: size %d nblocks %d ninodes %d nlog %d logstart %d inodestart %d bmapstart %d\n",
         sb.size, sb.nblocks, sb.ninodes, sb.nlog, sb.logstart, sb.inodestart,
         sb.bmapstart);
+
+    cprintf("iinit: success.\n");
 }
 
 static struct inode* iget(uint32_t, uint32_t);
