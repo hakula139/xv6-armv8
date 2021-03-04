@@ -154,6 +154,8 @@ user_init()
 
     strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
+    p->sz = PGSIZE;
+    p->cwd = namei("/");
     release(&p->lock);
 
     cprintf("user_init: proc %d (%s) success.\n", p->pid, p->name, cpuid());
@@ -267,8 +269,7 @@ exit(int status)
 {
     struct proc* p = thisproc();
 
-    // Temporarily disabled before user processes are implemented.
-    // if (p == initproc) panic("\texit: initproc exiting.\n");
+    if (p == initproc) panic("\texit: initproc exiting.\n");
 
     acquire(&wait_lock);
 
@@ -399,7 +400,7 @@ fork()
 
     // Increment reference counts on open file descriptors
     for (int i = 0; i < NOFILE; ++i) {
-        if (p->ofile[i]) np->ofile[i] = filedup(p->ofile[i]);
+        if (p->ofile[i]) np->ofile[i] = file_dup(p->ofile[i]);
     }
     np->cwd = idup(p->cwd);
 
@@ -439,14 +440,7 @@ wait()
             if (np->state == ZOMBIE) {
                 // Found one.
                 int pid = np->pid;
-                kfree(np->kstack);
-                np->kstack = NULL;
-                vm_free(np->pgdir, 4);
-                np->pid = 0;
-                np->parent = NULL;
-                np->name[0] = '\0';
-                np->killed = 0;
-                np->state = UNUSED;
+                proc_free(np);
                 release(&wait_lock);
                 return pid;
             }
