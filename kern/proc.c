@@ -271,6 +271,18 @@ exit(int status)
 
     if (p == initproc) panic("\texit: initproc exiting.\n");
 
+    for (int fd = 0; fd < NOFILE; ++fd) {
+        if (p->ofile[fd]) {
+            file_close(p->ofile[fd]);
+            p->ofile[fd] = 0;
+        }
+    }
+
+    begin_op();
+    iput(p->cwd);
+    p->cwd = 0;
+    end_op();
+
     acquire(&wait_lock);
 
     // Give any children to init.
