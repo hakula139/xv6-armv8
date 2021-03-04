@@ -11,10 +11,14 @@ start:
     mov     x8, #SYS_execve
     svc     0x00
 
-exit:
-    mov     x8, #SYS_exit
-    svc     0x00
-    b       exit
+# exit:
+#     mov     x8, #SYS_exit
+#     svc     0x00
+#     b       exit
+
+# initproc should not exit
+loop:
+    b       loop
 
 # char init[] = "/init\0";
 init:
