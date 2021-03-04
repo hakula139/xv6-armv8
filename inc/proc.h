@@ -81,5 +81,6 @@ int growproc(int);
 int fork();
 int wait();
 void proc_dump();
+void trapframe_dump(struct proc*);
 
 #endif  // INC_PROC_H_
