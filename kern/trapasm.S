@@ -27,7 +27,7 @@ alltraps:
     /* Save Q0 and TPIDR_EL0 to placate musl. */
     str q0, [sp, #-16]!
     mrs x4, tpidr_el0
-    stp x4, xzr, [sp, #-16]!
+    stp xzr, x4, [sp, #-16]!
 
     /* Call trap(struct trapframe*). */
     mov x0, sp
@@ -37,9 +37,9 @@ alltraps:
 .global trapret
 trapret:
     /* Restore Q0 and TPIDR_EL0. */
-    ldp x4, xzr, [sp], #16
-    msr tpidr_el0, x4
     ldr q0, [sp], #16
+    ldp xzr, x4, [sp], #16
+    msr tpidr_el0, x4
 
     /* Restore registers. */
     ldp x1, x2, [sp], #16

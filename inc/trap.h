@@ -4,6 +4,11 @@
 #include <stdint.h>
 
 struct trapframe {
+    // Additional registers used to support musl
+    uint64_t _padding;  // for 16-byte aligned
+    uint64_t tpidr_el0;
+    __uint128_t q0;
+
     // Special Registers
     uint64_t sp_el0;    // Stack Pointer
     uint64_t spsr_el1;  // Program Status Register
