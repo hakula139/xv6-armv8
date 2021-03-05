@@ -1507,10 +1507,84 @@ main(int argc, char* argv[])
 遗憾的是，由于时间有限，代码虽然已全部完成（包括所有系统调用，以及函数 `fork`, `wait`, `execve` 等），但尚未调通。目前系统可以成功进行到初始化程序 `initcode.S` 完成系统调用，但暂时还不能启动 shell，故障原因仍在排查中。
 
 ```bash
-> make && make qemu
+> make
+> make qemu
 ```
 
 ```text
+console_init: success.
+main: [CPU 3] init started.
+alloc_init: success.
+proc_init: success.
+irq_init: success.
+timer_init: success at CPU 3.
+file_init: success.
+binit: success.
+- mbox write: 0x7ccc8
+- mbox read: 0x7ccc8
+- clock rate: 50000000
+- SD base clock rate from mailbox: 50000000
+- Reset the card.
+- Divisor selected = 104, shift count = 6
+- EMMC: Set clock, status 0x1ff0000 CONTROL1: 0xe6807
+- Send IX_GO_IDLE_STATE command.
+- Send command response: 0
+- EMMC: Sending ACMD41 SEND_OP_COND status 1ff0000
+- Divisor selected = 2, shift count = 0
+- EMMC: Set clock, status 0x1ff0000 CONTROL1: 0xe0207
+- EMMC: SD Card Type 2 SC 128Mb UHS-I 0 mfr 170 'XY:QEMU!' r0.1 2/2006, #deadbeef RCA 4567
+sd_init: Partition 1: 00 20 21 00 0c 49 01 08 00 08 00 00 00 00 02 00 
+- Status: 0
+- CHS address of first absolute sector: head=32, sector=33, cylinder=0
+- Partition type: 12
+- CHS address of last absolute sector: head=73, sector=1, cylinder=8
+- LBA of first absolute sector: 0x800
+- Number of sectors: 131072
+sd_init: Partition 2: 00 49 02 08 83 51 01 10 00 08 02 00 00 f8 01 00 
+- Status: 0
+- CHS address of first absolute sector: head=73, sector=2, cylinder=8
+- Partition type: 131
+- CHS address of last absolute sector: head=81, sector=1, cylinder=16
+- LBA of first absolute sector: 0x20800
+- Number of sectors: 129024
+sd_init: Partition 3: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+- Status: 0
+- CHS address of first absolute sector: head=0, sector=0, cylinder=0
+- Partition type: 0
+- CHS address of last absolute sector: head=0, sector=0, cylinder=0
+- LBA of first absolute sector: 0x0
+- Number of sectors: 0
+sd_init: Partition 4: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+- Status: 0
+- CHS address of first absolute sector: head=0, sector=0, cylinder=0
+- Partition type: 0
+- CHS address of last absolute sector: head=0, sector=0, cylinder=0
+- LBA of first absolute sector: 0x0
+- Number of sectors: 0
+sd_init: Boot signature: 55 aa
+sd_init: success.
+proc_alloc: proc 1 success.
+user_init: proc 1 (initproc) success.
+main: [CPU 3] init success.
+main: [CPU 0] init started.
+timer_init: success at CPU 0.
+main: [CPU 2] init started.
+timer_init: success at CPU 2.
+main: [CPU 1] init started.
+main: [CPU 0] init success.
+main: [CPU 2] init success.
+timer_init: success at CPU 1.
+bget: dev 1 blockno 133121
+main: [CPU 1] init success.
+super block: size 1000 nblocks 941 ninodes 200 nlog 30 logstart 2 inodestart 32 bmapstart 58
+iinit: success.
+bget: dev 1 blockno 133121
+bget: dev 1 blockno 133122
+bget: dev 1 blockno 133122
+initlog: success.
+syscall: syscall 221 from proc 1
+sys_exec: exec '' uargv 0
+sys_exec: failed to fetch argument.
 ```
 
 ## 测试环境
