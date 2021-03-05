@@ -1221,14 +1221,293 @@ file_write(struct file* f, char* addr, ssize_t n)
 
 > 请修改 `syscall.c` 以及 `trapasm.S` 来接上 musl，或者修改 Makefile 并搬运 xv6 的简易 libc，从而允许用户态程序通过调用系统调用来操作文件系统。
 
+接上 musl 后，我们对系统调用的细节进行了一些修改。以下我们将以初始化程序 `user/initcode.S` 为例，简单梳理一下用户程序进行系统调用的全过程。
+
+#### 2.1 `initcode.S`
+
+这里我们引入了 musl 的 `syscall.h`，其中包含了 libc 中所有系统调用所对应的 system call number 的定义，例如系统调用 `sys_exec` 对应的 system call number 就是 `SYS_execve`（其值为 `221`）。
+
+对于 AArch64 架构来说，发起系统调用时，用户程序先将参数地址保存到通用寄存器 X0 ~ X5 里，再将系统调用对应的 system call number 保存到寄存器 X8 里，最后通过 `svc` 指令陷入内核态。
+
+```armasm {.line-numbers}
+// user/initcode.S
+
+# exec(init, argv)
+start:
+    ldr     x0, =init
+    ldr     x1, =argv
+    mov     x8, #SYS_execve
+    svc     0x00
+
+# char init[] = "/init\0";
+init:
+    .string "/init\0"
+
+# char *argv[] = { init, 0 };
+.p2align 4
+argv:
+    .word init
+    .word 0
+    .word 0
+    .word 0
+```
+
+#### 2.2 `trapasm.S`
+
+陷入内核态前，需要先构建 trapframe 结构。这里我们在原有寄存器的基础上，新增了 musl 需要用到的两个寄存器 Q0 和 TPIDR_EL0。
+
+```armasm {.line-numbers}
+// kern/trapasm.S
+
+/* Save Q0 and TPIDR_EL0 to placate musl. */
+str q0, [sp, #-16]!
+mrs x4, tpidr_el0
+stp xzr, x4, [sp, #-16]!
+```
+
+其中，零寄存器 `xzr` 用于填充空位，以保持 16 bytes 对齐。
+
+新的 trapframe 结构如下所示：
+
+```c {.line-numbers}
+// inc/trap.h
+
+struct trapframe {
+    // Additional registers used to support musl
+    uint64_t _padding;  // for 16-byte aligned
+    uint64_t tpidr_el0;
+    __uint128_t q0;
+
+    // Special Registers
+    uint64_t sp_el0;    // Stack Pointer
+    uint64_t spsr_el1;  // Program Status Register
+    uint64_t elr_el1;   // Exception Link Register
+
+    // General-Purpose Registers
+    uint64_t x0;
+    uint64_t x1;
+    uint64_t x2;
+    uint64_t x3;
+    uint64_t x4;
+    uint64_t x5;
+    uint64_t x6;
+    uint64_t x7;
+    uint64_t x8;
+    uint64_t x9;
+    uint64_t x10;
+    uint64_t x11;
+    uint64_t x12;
+    uint64_t x13;
+    uint64_t x14;
+    uint64_t x15;
+    uint64_t x16;
+    uint64_t x17;
+    uint64_t x18;
+    uint64_t x19;
+    uint64_t x20;
+    uint64_t x21;
+    uint64_t x22;
+    uint64_t x23;
+    uint64_t x24;
+    uint64_t x25;
+    uint64_t x26;
+    uint64_t x27;
+    uint64_t x28;
+    uint64_t x29;  // Frame Pointer
+    uint64_t x30;  // Procedure Link Register
+};
+```
+
+#### 2.3 `trap.c`
+
+随后跳转到函数 `trap` 入口。在函数 `trap` 中，我们根据寄存器 ESR (Exception Syndrome Register) 判断当前为系统调用，随后调用函数 `syscall1`，传入 trapframe，并将返回值保存在 trapframe 的寄存器 X0 中。
+
+```c {.line-numbers}
+// kern/trap.c
+
+void
+trap(struct trapframe* tf)
+{
+    int ec = resr() >> EC_SHIFT, iss = resr() & ISS_MASK;
+    lesr(0);  // Clear esr.
+    switch (ec) {
+    case EC_UNKNOWN: interrupt(tf); break;
+    case EC_SVC64:
+        if (!iss) {
+            /* Jump to syscall to handle the system call from user process */
+            tf->x0 = syscall1(tf);
+        } else {
+            cprintf("trap: unexpected svc iss 0x%x\n", iss);
+        }
+        break;
+    default: panic("\ttrap: unexpected irq.\n");
+    }
+}
+```
+
+#### 2.4 `syscall.c`
+
+我们根据之前保存在寄存器 X8 的值，可以得到当前的 system call number。随后利用函数指针表 `syscalls`，即可进行相应的系统调用。
+
+```c {.line-numbers}
+// kern/syscall.c
+
+int
+syscall1(struct trapframe* tf)
+{
+    struct proc* p = thisproc();
+    p->tf = tf;
+    uint64_t sysno = tf->x8;
+    if (sysno >= 0 && sysno < ARRAY_SIZE(syscalls) && syscalls[sysno]) {
+        cprintf("syscall: syscall %d from proc %d\n", sysno, p->pid);
+        tf->x0 = syscalls[sysno]();
+        return tf->x0;
+    } else {
+        cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
+        while (1) {}
+        return -1;
+    }
+    return 0;
+}
+```
+
+函数指针表 `syscalls` 包含了我们目前已实现的所有系统调用：
+
+```c {.line-numbers}
+// inc/types.h
+
+typedef int (*func)();
+```
+
+```c {.line-numbers}
+// kern/syscall.c
+
+static func syscalls[] = {
+    [SYS_set_tid_address] = sys_gettid,
+    [SYS_gettid] = sys_gettid,
+    [SYS_ioctl] = sys_ioctl,
+    [SYS_rt_sigprocmask] = sys_rt_sigprocmask,
+    [SYS_brk] = (func)sys_brk,
+    [SYS_execve] = sys_exec,
+    [SYS_sched_yield] = sys_yield,
+    [SYS_clone] = sys_clone,
+    [SYS_wait4] = sys_wait4,
+    // FIXME: exit_group should kill every thread in the current thread group.
+    [SYS_exit_group] = sys_exit,
+    [SYS_exit] = sys_exit,
+    [SYS_dup] = sys_dup,
+    [SYS_chdir] = sys_chdir,
+    [SYS_fstat] = sys_fstat,
+    [SYS_newfstatat] = sys_fstatat,
+    [SYS_mkdirat] = sys_mkdirat,
+    [SYS_mknodat] = sys_mknodat,
+    [SYS_openat] = sys_openat,
+    [SYS_writev] = (func)sys_writev,
+    [SYS_read] = (func)sys_read,
+    [SYS_close] = sys_close,
+};
+```
+
+由于时间有限，这些系统调用的功能和具体实现这里就不细讲了。函数定义的位置可以参见 `syscall1.h` 的注释。
+
+```c {.line-numbers}
+// inc/syscall1.h
+
+// kern/syscall1.c
+
+int sys_gettid();
+int sys_ioctl();
+int sys_rt_sigprocmask();
+
+// kern/sysproc.c
+
+int sys_exec();
+int sys_yield();
+size_t sys_brk();
+int sys_clone();
+int sys_wait4();
+int sys_exit();
+
+// kern/sysfile.c
+
+int sys_dup();
+ssize_t sys_read();
+ssize_t sys_write();
+ssize_t sys_writev();
+int sys_close();
+int sys_fstat();
+int sys_fstatat();
+int sys_openat();
+int sys_mkdirat();
+int sys_mknodat();
+int sys_chdir();
+```
+
+至此，用户程序就完成了一次系统调用。
+
 ### 3. Shell
 
 > 我们已经把 xv6 的 shell 搬运到了 `user/src/sh` 目录下，但需要实现 brk 系统调用来使用 malloc，你也可以自行实现一个简单的 shell。请在 `user/src/cat` 中实现 cat 命令并在你的 shell 中执行。
 
+#### 3.1 `cat`
+
+我们引用了 3 个头文件，分别用于：
+
+- `fcntl.h`：打开和关闭文件，对应函数 `open` 和 `close`
+- `stdio.h`：输出文本到终端，对应函数 `printf`
+- `unistd.h`：各种系统调用，包括函数 `read`, `write`, `_exit`
+
+`cat` 命令的实质就是从一个文件读取数据，然后写入到另一个文件（默认为终端）。至于文件类型是管道、终端还是普通文件，我们并不关心，因为系统调用的底层已经针对不同的文件类型进行了相应的处理。`cat` 命令的完整实现如下 [^2]：
+
+```c {.line-numbers}
+// user/src/cat/main.c
+
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+
+char buf[512];
+
+void
+cat(int fd)
+{
+    int n = read(fd, buf, sizeof(buf));
+    while (n > 0) {
+        if (write(1, buf, n) != n) {
+            printf("cat: write error.\n");
+            return;
+        }
+    }
+    if (n < 0) {
+        printf("cat: read error.\n");
+        return;
+    }
+}
+
+int
+main(int argc, char* argv[])
+{
+    if (argc <= 1) _exit(-1);
+
+    for (int i = 1; i < argc; ++i) {
+        int fd = open(argv[i], 0);
+        if (fd < 0) {
+            printf("cat: cannot open %s.\n", argv[i]);
+            _exit(-1);
+        }
+        cat(fd);
+        close(fd);
+    }
+    _exit(0);
+}
+```
+
 ## 运行结果
 
+遗憾的是，由于时间有限，代码虽然已全部完成（包括所有系统调用，以及函数 `fork`, `wait`, `execve` 等），但尚未调通。目前系统可以成功进行到初始化程序 `initcode.S` 完成系统调用，但暂时还不能启动 shell，故障原因仍在排查中。
+
 ```bash
-> make qemu
+> make && make qemu
 ```
 
 ```text
