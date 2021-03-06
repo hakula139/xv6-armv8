@@ -154,7 +154,6 @@ user_init()
 
     strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
-    p->sz = PGSIZE;
     p->cwd = namei("/");
     release(&p->lock);
 

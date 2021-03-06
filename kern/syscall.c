@@ -38,7 +38,7 @@ fetchstr(uint64_t addr, char** pp)
     *pp = (char*)addr;
     char* ep = (char*)p->sz;
     for (char* s = *pp; s < ep; ++s) {
-        if (*s == 0) return s - *pp;
+        if (*s == '\0') return s - *pp;
     }
     return -1;
 }
@@ -87,6 +87,7 @@ argstr(int n, char** pp)
 {
     uint64_t addr;
     if (argint(n, &addr) < 0) return -1;
+    cprintf("argstr: n %d addr %lld\n", n, addr);
     return fetchstr(addr, pp);
 }
 
