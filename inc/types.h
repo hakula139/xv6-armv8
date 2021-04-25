@@ -1,6 +1,12 @@
 #ifndef INC_TYPES_H_
 #define INC_TYPES_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+typedef int64_t ssize_t;
+typedef int (*func)();
+
 /* Efficient min and max operations */
 #define MIN(_a, _b)                                                            \
     ({                                                                         \

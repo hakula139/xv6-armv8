@@ -3,10 +3,10 @@
 
 #include <stdint.h>
 
+#include "fs.h"
 #include "sleeplock.h"
 
 #define BSIZE 512
-#define NBUF  30
 
 #define B_VALID 0x2 /* Buffer has been read from disk. */
 #define B_DIRTY 0x4 /* Buffer needs to be written to disk. */

@@ -2,11 +2,14 @@
 
 #include "arm.h"
 #include "console.h"
+#include "file.h"
 #include "kalloc.h"
+#include "log.h"
 #include "mmu.h"
 #include "spinlock.h"
 #include "string.h"
 #include "trap.h"
+#include "types.h"
 #include "vm.h"
 
 struct cpu cpus[NCPU];
@@ -27,7 +30,7 @@ extern void usertrapret(struct trapframe*);
 extern void trapret();
 void swtch(struct context**, struct context*);
 
-int
+static int
 pid_next()
 {
     acquire(&pid_lock);
@@ -151,6 +154,7 @@ user_init()
 
     strncpy(p->name, "initproc", sizeof(p->name));
     p->state = RUNNABLE;
+    p->cwd = namei("/");
     release(&p->lock);
 
     cprintf("user_init: proc %d (%s) success.\n", p->pid, p->name, cpuid());
@@ -186,8 +190,7 @@ scheduler()
             c->proc = p;
             uvm_switch(p);
             p->state = RUNNING;
-            cprintf(
-                "scheduler: switch to proc %d at CPU %d.\n", p->pid, cpuid());
+            // cprintf("scheduler: run proc %d at CPU %d.\n", p->pid, cpuid());
 
             swtch(&c->scheduler, p->context);
 
@@ -216,33 +219,30 @@ sched()
 }
 
 /*
- * Give up the CPU for one scheduling round.
- */
-void
-yield()
-{
-    struct proc* p = thiscpu->proc;
-    acquire(&p->lock);
-    p->state = RUNNABLE;
-    cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
-    sched();
-    release(&p->lock);
-}
-
-/*
  * A fork child's very first scheduling by scheduler()
  * will swtch to forkret. "Return" to user space.
  */
 void
 forkret()
 {
-    struct proc* p = thiscpu->proc;
+    volatile static int first = 1;
+    struct proc* p = thisproc();
+    struct trapframe* tf = p->tf;
 
     // Still holding p->lock from scheduler.
     release(&p->lock);
 
+    if (first) {
+        // Some initialization functions must be run in the context
+        // of a regular process (e.g., they call sleep), and thus cannot
+        // be run from main().
+        first = 0;
+        iinit(ROOTDEV);
+        initlog(ROOTDEV);
+    }
+
     // Pass trapframe pointer as an argument when calling trapret.
-    usertrapret(p->tf);
+    usertrapret(tf);
 }
 
 /*
@@ -265,10 +265,21 @@ reparent(struct proc* p)
 void
 exit(int status)
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
 
-    // Temporarily disabled before user processes are implemented.
-    // if (p == initproc) panic("\texit: initproc exiting.\n");
+    if (p == initproc) panic("\texit: initproc exiting.\n");
+
+    for (int fd = 0; fd < NOFILE; ++fd) {
+        if (p->ofile[fd]) {
+            file_close(p->ofile[fd]);
+            p->ofile[fd] = 0;
+        }
+    }
+
+    begin_op();
+    iput(p->cwd);
+    p->cwd = 0;
+    end_op();
 
     acquire(&wait_lock);
 
@@ -293,7 +304,7 @@ exit(int status)
 void
 sleep(void* chan, struct spinlock* lk)
 {
-    struct proc* p = thiscpu->proc;
+    struct proc* p = thisproc();
 
     // Must acquire p->lock in order to
     // change p->state and then call sched.
@@ -326,7 +337,7 @@ void
 wakeup(void* chan)
 {
     for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
-        if (p != thiscpu->proc) {
+        if (p != thisproc()) {
             acquire(&p->lock);
             if (p->state == SLEEPING && p->chan == chan) {
                 p->state = RUNNABLE;
@@ -334,4 +345,193 @@ wakeup(void* chan)
             release(&p->lock);
         }
     }
+}
+
+/*
+ * Give up the CPU for one scheduling round.
+ */
+void
+yield()
+{
+    struct proc* p = thisproc();
+    acquire(&p->lock);
+    p->state = RUNNABLE;
+    // cprintf("yield: proc %d gives up CPU %d.\n", p->pid, cpuid());
+    sched();
+    release(&p->lock);
+}
+
+/*
+ * Grow current process's memory by n bytes.
+ * Return 0 on success, -1 on failure.
+ */
+int
+growproc(int n)
+{
+    struct proc* p = thisproc();
+    uint64_t sz = p->sz;
+    if (n > 0) {
+        if (!(sz = uvm_alloc(p->pgdir, sz, sz + n))) return -1;
+    } else if (n < 0) {
+        if (!(sz = uvm_dealloc(p->pgdir, sz, sz + n))) return -1;
+    }
+    p->sz = sz;
+    uvm_switch(p);
+    return 0;
+}
+
+/*
+ * Create a new process copying p as the parent.
+ * Sets up stack to return as if from system call.
+ * Caller must set state of returned proc to RUNNABLE.
+ */
+int
+fork()
+{
+    // Allocate process
+    struct proc* np = proc_alloc();
+    if (!np) return -1;
+
+    struct proc* p = thisproc();
+
+    // Copy user memory from parent to child
+    if (uvm_copy(p->pgdir, np->pgdir, p->sz) < 0) {
+        proc_free(np);
+        release(&np->lock);
+        return -1;
+    }
+    np->sz = p->sz;
+
+    // Copy saved user registers
+    memcpy(np->tf, p->tf, sizeof(*p->tf));
+
+    // Cause fork to return 0 in the child
+    np->tf->x0 = 0;
+
+    // Increment reference counts on open file descriptors
+    for (int i = 0; i < NOFILE; ++i) {
+        if (p->ofile[i]) np->ofile[i] = file_dup(p->ofile[i]);
+    }
+    np->cwd = idup(p->cwd);
+
+    strncpy(np->name, p->name, sizeof(p->name));
+
+    int pid = np->pid;
+
+    release(&np->lock);
+
+    acquire(&wait_lock);
+    np->parent = p;
+    release(&wait_lock);
+
+    acquire(&np->lock);
+    np->state = RUNNABLE;
+    release(&np->lock);
+
+    return pid;
+}
+
+/*
+ * Wait for a child process to exit and return its pid.
+ * Return -1 if this process has no children.
+ */
+int
+wait()
+{
+    struct proc* p = thisproc();
+    acquire(&wait_lock);
+
+    while (1) {
+        // Scan through table looking for exited children.
+        int havekids = 0;
+        for (struct proc* np = ptable.proc; np < &ptable.proc[NPROC]; ++np) {
+            if (np->parent != p) continue;
+            havekids = 1;
+            if (np->state == ZOMBIE) {
+                // Found one.
+                int pid = np->pid;
+                proc_free(np);
+                release(&wait_lock);
+                return pid;
+            }
+        }
+
+        // No point waiting if we don't have any children.
+        if (!havekids || p->killed) {
+            release(&wait_lock);
+            return -1;
+        }
+
+        // Wait for children to exit.
+        sleep(p, &wait_lock);
+    }
+}
+
+/*
+ * Print a process listing to console. For debugging.
+ * No lock to avoid wedging a stuck machine further.
+ */
+void
+proc_dump()
+{
+    static char* states[] = {
+        [UNUSED] "UNUSED  ",  [SLEEPING] "SLEEPING", [RUNNABLE] "RUNNABLE",
+        [RUNNING] "RUNNING ", [ZOMBIE] "ZOMBIE  ",
+    };
+
+    cprintf("\n====== PROCESS DUMP ======\n");
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p) {
+        if (p->state == UNUSED) continue;
+        char* state =
+            (p->state >= 0 && p->state < ARRAY_SIZE(states) && states[p->state])
+                ? states[p->state]
+                : "UNKNOWN ";
+        cprintf("[%s] %d (%s)\n", state, p->pid, p->name);
+    }
+    cprintf("====== DUMP END ======\n\n");
+}
+
+/*
+ * Print the trap frame of a process to console. For debugging.
+ * No lock to avoid wedging a stuck machine further.
+ */
+void
+trapframe_dump(struct proc* p)
+{
+    cprintf("\n====== TRAP FRAME DUMP ======\n");
+    cprintf("sp:\t%lld\n", p->tf->sp_el0);
+    cprintf("spsr:\t%lld\n", p->tf->spsr_el1);
+    cprintf("elr:\t%lld\n", p->tf->elr_el1);
+    cprintf("x0:\t%lld\n", p->tf->x0);
+    cprintf("x1:\t%lld\n", p->tf->x1);
+    cprintf("x2:\t%lld\n", p->tf->x2);
+    cprintf("x3:\t%lld\n", p->tf->x3);
+    cprintf("x4:\t%lld\n", p->tf->x4);
+    cprintf("x5:\t%lld\n", p->tf->x5);
+    cprintf("x6:\t%lld\n", p->tf->x6);
+    cprintf("x7:\t%lld\n", p->tf->x7);
+    cprintf("x8:\t%lld\n", p->tf->x8);
+    cprintf("x9:\t%lld\n", p->tf->x9);
+    cprintf("x10:\t%lld\n", p->tf->x10);
+    cprintf("x11:\t%lld\n", p->tf->x11);
+    cprintf("x12:\t%lld\n", p->tf->x12);
+    cprintf("x13:\t%lld\n", p->tf->x13);
+    cprintf("x14:\t%lld\n", p->tf->x14);
+    cprintf("x15:\t%lld\n", p->tf->x15);
+    cprintf("x16:\t%lld\n", p->tf->x16);
+    cprintf("x17:\t%lld\n", p->tf->x17);
+    cprintf("x18:\t%lld\n", p->tf->x18);
+    cprintf("x19:\t%lld\n", p->tf->x19);
+    cprintf("x20:\t%lld\n", p->tf->x20);
+    cprintf("x21:\t%lld\n", p->tf->x21);
+    cprintf("x22:\t%lld\n", p->tf->x22);
+    cprintf("x23:\t%lld\n", p->tf->x23);
+    cprintf("x24:\t%lld\n", p->tf->x24);
+    cprintf("x25:\t%lld\n", p->tf->x25);
+    cprintf("x26:\t%lld\n", p->tf->x26);
+    cprintf("x27:\t%lld\n", p->tf->x27);
+    cprintf("x28:\t%lld\n", p->tf->x28);
+    cprintf("x29:\t%lld\n", p->tf->x29);
+    cprintf("x30:\t%lld\n", p->tf->x30);
+    cprintf("====== DUMP END ======\n\n");
 }

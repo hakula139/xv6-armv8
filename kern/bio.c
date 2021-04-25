@@ -22,10 +22,10 @@
 
 #include "buf.h"
 #include "console.h"
+#include "fs.h"
 #include "sd.h"
 #include "sleeplock.h"
 #include "spinlock.h"
-#include "string.h"
 
 struct {
     struct spinlock lock;
@@ -52,6 +52,8 @@ binit()
         bcache.head.next->prev = b;
         bcache.head.next = b;
     }
+
+    cprintf("binit: success.\n");
 }
 
 /*
@@ -62,6 +64,7 @@ binit()
 static struct buf*
 bget(uint32_t dev, uint32_t blockno)
 {
+    cprintf("bget: dev %d blockno %d\n", dev, blockno);
     acquire(&bcache.lock);
 
     // Is the block already cached?
@@ -98,7 +101,10 @@ bget(uint32_t dev, uint32_t blockno)
 struct buf*
 bread(uint32_t dev, uint32_t blockno)
 {
-    struct buf* b = bget(dev, blockno);
+    // Logical block address of the first absolute sector in partition 2,
+    // where our file system locates.
+    const uint32_t LBA = 0x20800;
+    struct buf* b = bget(dev, blockno + LBA);
     if (!(b->flags & B_VALID)) sd_rw(b);
     return b;
 }

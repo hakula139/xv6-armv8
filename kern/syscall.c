@@ -1,13 +1,14 @@
-#include "syscall.h"
+#include <syscall.h>
 
 #include "console.h"
 #include "proc.h"
 #include "string.h"
-#include "syscallno.h"
+#include "syscall1.h"
+#include "types.h"
 
 /*
  * User code makes a system call with SVC.
- * System call number in r0.
+ * System call number in r8.
  * Arguments on the stack, from the user call to the C
  * library system call function.
  */
@@ -16,9 +17,9 @@
 int
 fetchint(uint64_t addr, int64_t* ip)
 {
-    struct proc* proc = thiscpu->proc;
+    struct proc* p = thisproc();
+    if (addr >= p->sz || addr + 8 > p->sz) return -1;
 
-    if (addr >= proc->sz || addr + 8 > proc->sz) { return -1; }
     *ip = *(int64_t*)(addr);
     return 0;
 }
@@ -31,18 +32,14 @@ fetchint(uint64_t addr, int64_t* ip)
 int
 fetchstr(uint64_t addr, char** pp)
 {
-    char *s, *ep;
-    struct proc* proc = thiscpu->proc;
-
-    if (addr >= proc->sz) { return -1; }
+    struct proc* p = thisproc();
+    if (addr >= p->sz) return -1;
 
     *pp = (char*)addr;
-    ep = (char*)proc->sz;
-
-    for (s = *pp; s < ep; s++) {
-        if (*s == 0) { return s - *pp; }
+    char* ep = (char*)p->sz;
+    for (char* s = *pp; s < ep; ++s) {
+        if (*s == '\0') return s - *pp;
     }
-
     return -1;
 }
 
@@ -55,11 +52,9 @@ int
 argint(int n, uint64_t* ip)
 {
     if (n > 3) panic("\targint: too many system call parameters.\n");
+    struct proc* p = thisproc();
 
-    struct proc* proc = thiscpu->proc;
-
-    *ip = *(&proc->tf->x1 + n);
-
+    *ip = *(&p->tf->x1 + n);
     return 0;
 }
 
@@ -72,12 +67,10 @@ int
 argptr(int n, char** pp, int size)
 {
     uint64_t i;
+    if (argint(n, &i) < 0) return -1;
 
-    if (argint(n, &i) < 0) { return -1; }
-
-    struct proc* proc = thiscpu->proc;
-
-    if ((uint64_t)i >= proc->sz || (uint64_t)i + size > proc->sz) { return -1; }
+    struct proc* p = thisproc();
+    if ((uint64_t)i >= p->sz || (uint64_t)i + size > p->sz) return -1;
 
     *pp = (char*)i;
     return 0;
@@ -93,32 +86,49 @@ int
 argstr(int n, char** pp)
 {
     uint64_t addr;
-
-    if (argint(n, &addr) < 0) { return -1; }
-
+    if (argint(n, &addr) < 0) return -1;
+    cprintf("argstr: n %d addr %lld\n", n, addr);
     return fetchstr(addr, pp);
 }
 
-extern int sys_exec();
-extern int sys_exit();
-
-static int (*syscalls[])() = {
-    [SYS_exec] sys_exec,
-    [SYS_exit] sys_exit,
+static func syscalls[] = {
+    [SYS_set_tid_address] = sys_gettid,
+    [SYS_gettid] = sys_gettid,
+    [SYS_ioctl] = sys_ioctl,
+    [SYS_rt_sigprocmask] = sys_rt_sigprocmask,
+    [SYS_brk] = (func)sys_brk,
+    [SYS_execve] = sys_exec,
+    [SYS_sched_yield] = sys_yield,
+    [SYS_clone] = sys_clone,
+    [SYS_wait4] = sys_wait4,
+    // FIXME: exit_group should kill every thread in the current thread group.
+    [SYS_exit_group] = sys_exit,
+    [SYS_exit] = sys_exit,
+    [SYS_dup] = sys_dup,
+    [SYS_chdir] = sys_chdir,
+    [SYS_fstat] = sys_fstat,
+    [SYS_newfstatat] = sys_fstatat,
+    [SYS_mkdirat] = sys_mkdirat,
+    [SYS_mknodat] = sys_mknodat,
+    [SYS_openat] = sys_openat,
+    [SYS_writev] = (func)sys_writev,
+    [SYS_read] = (func)sys_read,
+    [SYS_close] = sys_close,
 };
 
 int
-syscall()
+syscall1(struct trapframe* tf)
 {
-    struct proc* p = thiscpu->proc;
-    int num = p->tf->x0;
-    if (num >= 0 && num < NELEM(syscalls) && syscalls[num]) {
-        cprintf("syscall: proc %d calls syscall %d.\n", p->pid, num);
-        return syscalls[num]();
+    struct proc* p = thisproc();
+    p->tf = tf;
+    uint64_t sysno = tf->x8;
+    if (sysno >= 0 && sysno < ARRAY_SIZE(syscalls) && syscalls[sysno]) {
+        cprintf("syscall: syscall %d from proc %d\n", sysno, p->pid);
+        tf->x0 = syscalls[sysno]();
+        return tf->x0;
     } else {
-        cprintf(
-            "syscall: unknown syscall %d from proc %d (%s).\n", num, p->pid,
-            p->name);
+        cprintf("syscall: unknown syscall %d from proc %d\n", sysno, p->pid);
+        while (1) {}
         return -1;
     }
     return 0;
